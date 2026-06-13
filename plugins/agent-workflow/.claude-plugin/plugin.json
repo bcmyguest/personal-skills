@@ -1,0 +1,6 @@
+{
+  "name": "agent-workflow",
+  "description": "Agent session helpers: write troubleshooting handoffs (handoff) and track upstream GitHub issues/PRs/releases (watchlist)",
+  "version": "0.1.0",
+  "author": { "name": "Brandon Guest" }
+}

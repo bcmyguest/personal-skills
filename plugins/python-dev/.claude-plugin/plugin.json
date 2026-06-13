@@ -1,0 +1,6 @@
+{
+  "name": "python-dev",
+  "description": "Python project tooling with uv: scaffold a project (uv-setup), day-to-day development (uv-develop), and pre-commit hygiene (pre-commit-setup)",
+  "version": "0.1.0",
+  "author": { "name": "Brandon Guest" }
+}

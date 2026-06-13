@@ -1,10 +1,9 @@
 # personal-skills
 
 A local [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace —
-my personal toolkit. All skills live in a single [`skills/`](skills) pool; plugins are
-thematic groupings defined in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json),
-each selecting a subset of those skills (the same pattern as
-[anthropics/skills](https://github.com/anthropics/skills)).
+my personal toolkit. Each plugin is self-contained in its own directory under
+[`plugins/`](plugins), bundling that plugin's skills (and any hooks). The plugins are
+registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json).
 
 ## Plugins
 
@@ -20,25 +19,24 @@ each selecting a subset of those skills (the same pattern as
 ## Layout
 
 ```
-.claude-plugin/marketplace.json   # plugins = groupings over the shared skills/ pool
+.claude-plugin/marketplace.json   # registers the plugins below
 plugins.json                      # marketplaces + enable list for install-plugins.sh
 install-plugins.sh                # idempotent installer
-skills/                           # one dir per skill (shared by the source:"./" plugins)
-  uv-setup/  uv-develop/  pre-commit-setup/
-  handoff/   watchlist/   senior-frontend-refactor/
-  add-ansible-role/  debug-lemonade/
-plugins/git-tools/                # self-contained plugin (isolated hook)
-  .claude-plugin/plugin.json
-  hooks/hooks.json
-  scripts/attribution-guard.py
-  skills/git-attribution/
+plugins/                          # one self-contained dir per plugin
+  python-dev/      skills/{uv-setup, uv-develop, pre-commit-setup}
+  agent-workflow/  skills/{handoff, watchlist}
+  frontend/        skills/senior-frontend-refactor
+  ansible/         skills/add-ansible-role
+  lemonade/        skills/debug-lemonade
+  git-tools/       skills/git-attribution + hooks/ + scripts/
 docs/                             # one doc per plugin
 ```
 
-Most plugins use `source: "./"` and list their skills explicitly, so they share the
-root `skills/` pool. `git-tools` is the exception: it ships a `PreToolUse` hook, and a
-hook at the repo root would attach to *every* `source: "./"` plugin — so it lives in its
-own directory (`plugins/git-tools`) to keep the hook isolated to that plugin.
+Each plugin dir holds a `.claude-plugin/plugin.json` and a `skills/` subdir; Claude Code
+auto-discovers every skill in that subdir. Each plugin therefore needs its **own**
+`source` dir — if two plugins shared a `source` root, each would auto-discover the
+*other's* skills too, duplicating every skill across plugins. `git-tools` additionally
+ships a `PreToolUse` hook, scoped to its own directory.
 
 ## Install on a new machine
 

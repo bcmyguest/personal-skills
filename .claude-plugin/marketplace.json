@@ -11,59 +11,38 @@
     {
       "name": "python-dev",
       "description": "Python project tooling with uv: scaffold a project (uv-setup), day-to-day development (uv-develop), and pre-commit hygiene (pre-commit-setup)",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/uv-setup",
-        "./skills/uv-develop",
-        "./skills/pre-commit-setup"
-      ]
+      "source": "./plugins/python-dev",
+      "strict": false
     },
     {
       "name": "agent-workflow",
       "description": "Agent session helpers: write troubleshooting handoffs (handoff) and track upstream GitHub issues/PRs/releases (watchlist)",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/handoff",
-        "./skills/watchlist"
-      ]
+      "source": "./plugins/agent-workflow",
+      "strict": false
     },
     {
       "name": "frontend",
       "description": "Refactor frontend code as a senior engineer, preserving behavior (senior-frontend-refactor)",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/senior-frontend-refactor"
-      ]
+      "source": "./plugins/frontend",
+      "strict": false
     },
     {
       "name": "ansible",
       "description": "Scaffold tool-install roles into a personal Ansible provisioning playbook (add-ansible-role)",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/add-ansible-role"
-      ]
+      "source": "./plugins/ansible",
+      "strict": false
     },
     {
       "name": "lemonade",
       "description": "Diagnose lemonade-server (lemond) on the Strix Halo box (debug-lemonade)",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/debug-lemonade"
-      ]
+      "source": "./plugins/lemonade",
+      "strict": false
     },
     {
       "name": "git-tools",
       "description": "Kernel-style AI commit attribution (Assisted-by) enforced by a PreToolUse hook (git-attribution)",
       "source": "./plugins/git-tools",
-      "strict": false,
-      "skills": [
-        "./skills/git-attribution"
-      ]
+      "strict": false
     }
   ]
 }
