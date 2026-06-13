@@ -283,14 +283,18 @@ import { theme } from './theme'
 </ThemeProvider>
 ```
 
-For **Tailwind, Chakra, Mantine, or none**, read
-[`references/ui-frameworks.md`](references/ui-frameworks.md) — it has the install,
-theme/token wiring, and the colour-set guidance per framework.
+Not MUI? Read **only** the one file for the chosen framework — each is
+self-contained, so you never load the other frameworks' context:
+
+- Tailwind → [`references/ui-frameworks/tailwind.md`](references/ui-frameworks/tailwind.md)
+- Chakra → [`references/ui-frameworks/chakra.md`](references/ui-frameworks/chakra.md)
+- Mantine → [`references/ui-frameworks/mantine.md`](references/ui-frameworks/mantine.md)
+- none (plain CSS) → [`references/ui-frameworks/none.md`](references/ui-frameworks/none.md)
 
 ## 7. Pre-commit hooks — two layers, husky owns the git hook
 
-The repo gets **both** the **pre-commit-setup** skill's baseline hygiene hooks
-**and** husky + lint-staged for ESLint/Prettier. The trap: the `pre-commit`
+The repo gets **both** baseline file-hygiene hooks (the language-agnostic
+`pre-commit` framework) **and** husky + lint-staged for ESLint/Prettier. The trap: the `pre-commit`
 framework and husky both want to own `.git/hooks/pre-commit`. **Resolve it by
 letting husky own the hook and calling the pre-commit framework from inside it — so
 never run `pre-commit install`** (that would clobber husky's hook).
@@ -323,15 +327,34 @@ if command -v pre-commit >/dev/null 2>&1; then
 fi
 ```
 
-For the hygiene layer, follow the **pre-commit-setup** skill to create
-`.pre-commit-config.yaml`. One JS-repo adjustment: `tsconfig*.json` and
-`.vscode/*.json` are **JSONC** (they contain comments), which the strict `check-json`
-hook rejects — exclude them:
+For the hygiene layer, create `.pre-commit-config.yaml` with the standard
+file-hygiene hooks, pinning `rev` to the repo's latest tagged release (don't guess —
+check the tags). The one JS-repo adjustment: `tsconfig*.json` and `.vscode/*.json`
+are **JSONC** (they contain comments), which the strict `check-json` hook rejects —
+`exclude` them:
 
 ```yaml
-- id: check-json
-  exclude: ^(tsconfig.*\.json|\.vscode/.*\.json)$
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0          # use the latest tagged release
+    hooks:
+      - id: trailing-whitespace      # strip trailing whitespace
+      - id: end-of-file-fixer        # exactly one trailing newline
+      - id: mixed-line-ending        # normalize line endings (LF)
+        args: [--fix=lf]
+      - id: check-yaml               # validate YAML
+      - id: check-toml               # validate TOML
+      - id: check-json               # validate JSON…
+        exclude: ^(tsconfig.*\.json|\.vscode/.*\.json)$   # …but skip JSONC
+      - id: check-added-large-files  # block accidental large blobs
+      - id: check-merge-conflict     # block leftover conflict markers
+      - id: check-case-conflict      # case-insensitive filename clashes
 ```
+
+The hygiene layer is optional and needs the `pre-commit` tool installed **outside**
+the repo (`pipx install pre-commit` or `brew install pre-commit`) — a JS repo has no
+Python dep manager to track it, and `.husky/pre-commit` already skips the step when
+the binary is absent. Don't run `pre-commit install` — husky owns the git hook.
 
 The first commit (or `pre-commit run --all-files`) will modify files — fixing
 trailing newlines on scaffolded SVGs, etc. That's expected; re-stage and commit.

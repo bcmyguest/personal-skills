@@ -34,7 +34,8 @@ def main() -> int:
     problems = []
     if "Assisted-by:" not in cmd:
         problems.append(
-            "missing `Assisted-by: Claude:claude-fable-5` trailer"
+            "missing `Assisted-by: Claude:<model-id>` trailer (fill <model-id> "
+            "with the model id you actually are)"
         )
     if re.search(r"Co-Authored-By:\s*Claude", cmd, re.IGNORECASE):
         problems.append(
@@ -51,8 +52,9 @@ def main() -> int:
         sys.stderr.write(
             "Commit blocked by git-attribution guard (kernel attribution policy):\n"
             + "\n".join(f"  - {p}" for p in problems)
-            + "\n\nUse a trailer like:\n  Assisted-by: Claude:claude-fable-5\n"
-            "and let the human add their own Signed-off-by if they want one.\n"
+            + "\n\nUse a trailer like:\n  Assisted-by: Claude:<model-id>\n"
+            "(fill <model-id> with the model you actually are) and let the human "
+            "add their own Signed-off-by if they want one.\n"
         )
         return 2
 

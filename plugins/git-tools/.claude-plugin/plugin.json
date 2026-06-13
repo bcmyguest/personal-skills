@@ -1,6 +1,5 @@
 {
   "name": "git-tools",
-  "description": "Git commit hygiene: kernel-style AI attribution policy (Assisted-by trailer) enforced by a PreToolUse hook",
   "version": "0.1.0",
   "author": { "name": "Brandon Guest" }
 }

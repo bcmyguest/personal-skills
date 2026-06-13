@@ -7,14 +7,14 @@ registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.jso
 
 ## Plugins
 
-| Plugin | Skills | Docs |
-|--------|--------|------|
-| `python-dev` | uv-setup, uv-develop, pre-commit-setup | [docs/python-dev.md](docs/python-dev.md) |
-| `git-tools` | git-attribution (+ enforcing hook) | [docs/git-tools.md](docs/git-tools.md) |
-| `agent-workflow` | handoff, watchlist | [docs/agent-workflow.md](docs/agent-workflow.md) |
-| `frontend` | react-ts-setup, senior-frontend-refactor | [docs/frontend.md](docs/frontend.md) |
-| `ansible` | add-ansible-role | [docs/ansible.md](docs/ansible.md) |
-| `lemonade` | debug-lemonade | [docs/lemonade.md](docs/lemonade.md) |
+| Plugin | Skills |
+|--------|--------|
+| `python-dev` | uv-setup, uv-develop, pre-commit-setup |
+| `git-tools` | git-attribution (+ enforcing hook) |
+| `agent-workflow` | handoff, watchlist |
+| `frontend` | react-ts-setup, senior-frontend-refactor |
+| `ansible` | add-ansible-role |
+| `lemonade` | debug-lemonade |
 
 ## Layout
 
@@ -29,7 +29,6 @@ plugins/                          # one self-contained dir per plugin
   ansible/         skills/add-ansible-role
   lemonade/        skills/debug-lemonade
   git-tools/       skills/git-attribution + hooks/ + scripts/
-docs/                             # one doc per plugin
 ```
 
 Each plugin dir holds a `.claude-plugin/plugin.json` and a `skills/` subdir; Claude Code

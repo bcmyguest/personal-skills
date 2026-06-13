@@ -1,6 +1,5 @@
 {
   "name": "ansible",
-  "description": "Scaffold tool-install roles into a personal Ansible provisioning playbook (add-ansible-role)",
   "version": "0.1.0",
   "author": { "name": "Brandon Guest" }
 }

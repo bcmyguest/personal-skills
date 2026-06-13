@@ -1,6 +1,5 @@
 {
   "name": "lemonade",
-  "description": "Diagnose lemonade-server (lemond) on the Strix Halo box (debug-lemonade)",
   "version": "0.1.0",
   "author": { "name": "Brandon Guest" }
 }

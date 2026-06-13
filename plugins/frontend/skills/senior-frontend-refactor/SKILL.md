@@ -40,7 +40,8 @@ Make small, behavior-preserving changes one at a time:
 ### 4. Test
 
 - Run the existing test suite after each meaningful change
-- Write new tests for any changed or extracted logic (this is required — see CLAUDE.md)
+- Write new tests for any changed or extracted logic — this is required: every
+  behavior change or extracted unit ships with a test that exercises it
 - For UI changes, use Playwright for E2E tests
 
 ### 5. Verify
