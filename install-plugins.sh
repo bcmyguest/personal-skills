@@ -21,11 +21,18 @@ for m in json.load(open('$cfg'))['marketplaces']:
   fi
 done
 
+# Install new, bump already-installed to the latest committed commit, ensure enabled.
+# `update` is the step that moves a local (directory) marketplace's cached plugin to
+# the newest commit — install/enable alone won't, so already-installed plugins would
+# stay pinned to whatever commit they were first installed at. All three are
+# idempotent; failures (e.g. "already installed", "already enabled") are ignored.
 python3 -c "import json;[print(p) for p in json.load(open('$cfg'))['enable']]" | while read -r p; do
-  claude plugin install "$p" 2>/dev/null || claude plugin enable "$p" 2>/dev/null \
-    || echo "already installed: $p"
+  echo "==> $p"
+  claude plugin install "$p" 2>/dev/null || true   # no-op if already installed
+  claude plugin update  "$p" 2>/dev/null || true   # bump to latest commit (restart to apply)
+  claude plugin enable  "$p" 2>/dev/null || true   # ensure enabled
 done
 
 echo "--- installed plugins ---"
 claude plugin list 2>/dev/null | grep "❯" || true
-echo "done."
+echo "done. Restart Claude Code to apply plugin updates."
