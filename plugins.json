@@ -1,0 +1,31 @@
+{
+  "_comment": "Claude plugins to load on a new machine/install. Run ./install-plugins.sh to apply.",
+  "marketplaces": [
+    {
+      "name": "personal-skills",
+      "type": "local",
+      "path": "."
+    },
+    {
+      "name": "anthropic-agent-skills",
+      "type": "github",
+      "path": "anthropics/skills"
+    },
+    {
+      "name": "caveman",
+      "type": "github",
+      "path": "JuliusBrussee/caveman"
+    }
+  ],
+  "enable": [
+    "python-dev@personal-skills",
+    "git-tools@personal-skills",
+    "agent-workflow@personal-skills",
+    "frontend@personal-skills",
+    "ansible@personal-skills",
+    "lemonade@personal-skills",
+    "caveman@caveman",
+    "document-skills@anthropic-agent-skills",
+    "example-skills@anthropic-agent-skills"
+  ]
+}

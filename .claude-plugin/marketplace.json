@@ -1,0 +1,69 @@
+{
+  "name": "personal-skills",
+  "owner": {
+    "name": "Brandon Guest"
+  },
+  "metadata": {
+    "description": "Brandon Guest's personal Claude Code skills",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "python-dev",
+      "description": "Python project tooling with uv: scaffold a project (uv-setup), day-to-day development (uv-develop), and pre-commit hygiene (pre-commit-setup)",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uv-setup",
+        "./skills/uv-develop",
+        "./skills/pre-commit-setup"
+      ]
+    },
+    {
+      "name": "agent-workflow",
+      "description": "Agent session helpers: write troubleshooting handoffs (handoff) and track upstream GitHub issues/PRs/releases (watchlist)",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/handoff",
+        "./skills/watchlist"
+      ]
+    },
+    {
+      "name": "frontend",
+      "description": "Refactor frontend code as a senior engineer, preserving behavior (senior-frontend-refactor)",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/senior-frontend-refactor"
+      ]
+    },
+    {
+      "name": "ansible",
+      "description": "Scaffold tool-install roles into a personal Ansible provisioning playbook (add-ansible-role)",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/add-ansible-role"
+      ]
+    },
+    {
+      "name": "lemonade",
+      "description": "Diagnose lemonade-server (lemond) on the Strix Halo box (debug-lemonade)",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/debug-lemonade"
+      ]
+    },
+    {
+      "name": "git-tools",
+      "description": "Kernel-style AI commit attribution (Assisted-by) enforced by a PreToolUse hook (git-attribution)",
+      "source": "./plugins/git-tools",
+      "strict": false,
+      "skills": [
+        "./skills/git-attribution"
+      ]
+    }
+  ]
+}
