@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "description": "Refactor frontend code as a senior engineer, preserving behavior (senior-frontend-refactor)",
+  "description": "Scaffold a new React + TypeScript repo with Vite, the full toolchain, and green checks (react-ts-setup), and refactor existing frontend code as a senior engineer (senior-frontend-refactor)",
   "version": "0.1.0",
   "author": { "name": "Brandon Guest" }
 }

@@ -12,7 +12,7 @@ registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.jso
 | `python-dev` | uv-setup, uv-develop, pre-commit-setup | [docs/python-dev.md](docs/python-dev.md) |
 | `git-tools` | git-attribution (+ enforcing hook) | [docs/git-tools.md](docs/git-tools.md) |
 | `agent-workflow` | handoff, watchlist | [docs/agent-workflow.md](docs/agent-workflow.md) |
-| `frontend` | senior-frontend-refactor | [docs/frontend.md](docs/frontend.md) |
+| `frontend` | react-ts-setup, senior-frontend-refactor | [docs/frontend.md](docs/frontend.md) |
 | `ansible` | add-ansible-role | [docs/ansible.md](docs/ansible.md) |
 | `lemonade` | debug-lemonade | [docs/lemonade.md](docs/lemonade.md) |
 
@@ -25,7 +25,7 @@ install-plugins.sh                # idempotent installer
 plugins/                          # one self-contained dir per plugin
   python-dev/      skills/{uv-setup, uv-develop, pre-commit-setup}
   agent-workflow/  skills/{handoff, watchlist}
-  frontend/        skills/senior-frontend-refactor
+  frontend/        skills/{react-ts-setup, senior-frontend-refactor}
   ansible/         skills/add-ansible-role
   lemonade/        skills/debug-lemonade
   git-tools/       skills/git-attribution + hooks/ + scripts/
