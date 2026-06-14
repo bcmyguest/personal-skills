@@ -74,6 +74,17 @@ impl Default for Config {
 }
 
 fn default_roots() -> Vec<PathBuf> {
+    // Opt-in override: colon-separated roots. Unset -> the defaults below.
+    // Lets evals/tools scope discovery to one skill library without a config
+    // file (e.g. `SKI_ROOTS=~/.claude/plugins/marketplaces/anthropic-agent-skills`).
+    if let Some(raw) = std::env::var_os("SKI_ROOTS") {
+        let roots: Vec<PathBuf> = std::env::split_paths(&raw)
+            .filter(|p| !p.as_os_str().is_empty())
+            .collect();
+        if !roots.is_empty() {
+            return roots;
+        }
+    }
     let mut v = Vec::new();
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
         v.push(home.join(".claude/skills"));
