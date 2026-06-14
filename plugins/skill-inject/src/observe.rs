@@ -31,15 +31,11 @@ struct ToolInput {
     /// `Read` tool: the file the model opened.
     #[serde(default)]
     file_path: String,
-    /// `Skill` tool: the invoked skill's name. The exact field the harness uses
-    /// is unconfirmed, so accept the plausible spellings — whichever is present
-    /// wins. (The `Read`→`SKILL.md` path below needs none of these.)
+    /// `Skill` tool: the invoked skill, plugin-namespaced (e.g.
+    /// `document-skills:webapp-testing`). `normalize_skill_name` strips the
+    /// prefix to the bare id we index by.
     #[serde(default)]
     skill: String,
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    command: String,
 }
 
 /// Run the observer for `host`. Logic is host-agnostic today; the parameter is
@@ -81,10 +77,10 @@ fn skill_id_for(idx: Option<&Index>, tool: &str, input: &ToolInput) -> Option<St
         return idx?.by_path(Path::new(p)).map(|e| e.id.clone());
     }
     if tool.eq_ignore_ascii_case("Skill") {
-        let raw = [&input.skill, &input.name, &input.command]
-            .into_iter()
-            .map(|s| s.trim())
-            .find(|s| !s.is_empty())?;
+        let raw = input.skill.trim();
+        if raw.is_empty() {
+            return None;
+        }
         return Some(normalize_skill_name(raw));
     }
     None
