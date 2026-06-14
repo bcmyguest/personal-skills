@@ -31,8 +31,10 @@ cd plugins/skill-inject
 
 ```
 src/
-  main.rs        # clap CLI: index / why (+ stubbed hook/observe/session-start)
+  main.rs        # clap CLI: index / why / hook / observe / session-start
   lib.rs         # module wiring
+  observe.rs     # PostToolUse: record model-loaded skills (Read SKILL.md / Skill)
+  session_start.rs # SessionStart: incremental reindex + re-arm on compaction
   config.rs      # Config + defaults (model, thresholds, roots)
   text.rs        # tokenize + FNV hashes (deterministic — see "Determinism")
   skill.rs       # SKILL.md discovery + frontmatter parse

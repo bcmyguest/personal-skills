@@ -1,5 +1,5 @@
-//! `ski` CLI. Milestones 1–2 implement `index`, `why`, and `hook`; `observe`
-//! and `session-start` are stubbed until milestone 3.
+//! `ski` CLI. Milestones 1–3 implement `index`, `why`, `hook`, `observe`, and
+//! `session-start`.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -7,7 +7,7 @@ use ski::config::Config;
 use ski::embed::{self, EmbedKind};
 use ski::hook::{self, Host};
 use ski::index::{self, Index};
-use ski::{paths, rank, skill};
+use ski::{observe, paths, rank, session_start, skill};
 
 #[derive(Parser)]
 #[command(
@@ -41,12 +41,12 @@ enum Cmd {
         #[arg(long)]
         host: String,
     },
-    /// [stub, milestone 2] record skills the model loaded itself.
+    /// PostToolUse: record skills the model loaded itself.
     Observe {
         #[arg(long)]
         host: String,
     },
-    /// [stub, milestone 2] incremental reindex + re-arm session state.
+    /// SessionStart: incremental reindex + re-arm session state on compaction.
     SessionStart {
         #[arg(long)]
         host: String,
@@ -60,8 +60,8 @@ fn main() -> Result<()> {
         Cmd::Index { rebuild } => cmd_index(&cfg, rebuild),
         Cmd::Why { prompt, top } => cmd_why(&cfg, &prompt.join(" "), top),
         Cmd::Hook { host } => hook::run(host.parse::<Host>()?),
-        Cmd::Observe { host } => stub("observe", &host),
-        Cmd::SessionStart { host } => stub("session-start", &host),
+        Cmd::Observe { host } => observe::run(host.parse::<Host>()?),
+        Cmd::SessionStart { host } => session_start::run(host.parse::<Host>()?),
     }
 }
 
@@ -114,10 +114,5 @@ fn cmd_why(cfg: &Config, prompt: &str, top: usize) -> Result<()> {
             h.name, h.score, h.cosine, h.keyword
         );
     }
-    Ok(())
-}
-
-fn stub(name: &str, host: &str) -> Result<()> {
-    eprintln!("ski {name}: not yet implemented (milestone 2); host={host}");
     Ok(())
 }

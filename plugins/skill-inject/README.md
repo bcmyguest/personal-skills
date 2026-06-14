@@ -6,15 +6,17 @@ milestones) injects the matched skill into context with no `use_skill` tool call
 
 See [PLAN.md](./PLAN.md) for the full design.
 
-## Status — milestone 2
+## Status — milestone 3
 
-Skill discovery + embedding index + hybrid ranking (`ski index` / `ski why`) plus
-the hook hot-path `ski hook`: reads a hook event on stdin, ranks, dedups against
-per-session state, and writes the host's injection contract on stdout. `observe`
-and `session-start` are stubbed for milestone 3; `init` lands later.
+Skill discovery + embedding index + hybrid ranking (`ski index` / `ski why`), the
+hook hot-path `ski hook` (reads a hook event on stdin, ranks, dedups against
+per-session state, writes the host's injection contract on stdout), plus the
+lifecycle commands: `ski observe` records skills the model loaded itself
+(PostToolUse) so they're never re-injected, and `ski session-start` incrementally
+reindexes and re-arms the session ledger on compaction. `init` lands later.
 
-`ski hook` fails open by design — bad stdin, a missing index, or any IO error
-yields an empty injection and exit 0, never a blocked prompt.
+All hook-driven commands fail open by design — bad stdin, a missing index, or any
+IO error yields no output and exit 0, never a blocked prompt.
 
 ## Build & test
 

@@ -31,6 +31,21 @@ impl Index {
         self.skills.iter().find(|e| e.id == id)
     }
 
+    /// Find the skill whose `SKILL.md` lives at `path`. Used by `ski observe` to
+    /// map a file the model just read back to a skill id. Matches on the raw
+    /// stored string first (cheap, and the common case), then falls back to
+    /// canonicalized comparison so `./x` and `/abs/x` resolve to the same entry.
+    pub fn by_path(&self, path: &Path) -> Option<&Entry> {
+        let raw = path.to_string_lossy();
+        if let Some(e) = self.skills.iter().find(|e| e.path == raw) {
+            return Some(e);
+        }
+        let want = fs::canonicalize(path).ok()?;
+        self.skills
+            .iter()
+            .find(|e| fs::canonicalize(&e.path).ok().as_deref() == Some(want.as_path()))
+    }
+
     pub fn load(path: &Path) -> anyhow::Result<Option<Index>> {
         if !path.exists() {
             return Ok(None);
@@ -95,4 +110,38 @@ pub fn build(
     let skills: Vec<Entry> = entries.into_iter().flatten().collect();
     let dim = skills.first().map(|e| e.embedding.len()).unwrap_or(0);
     Ok(Index { model, dim, skills })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: &str, path: &str) -> Entry {
+        Entry {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: String::new(),
+            path: path.to_string(),
+            keywords: Vec::new(),
+            hash: String::new(),
+            embedding: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn by_path_matches_stored_string() {
+        let idx = Index {
+            model: "m".into(),
+            dim: 0,
+            skills: vec![
+                entry("pdf", "/skills/pdf/SKILL.md"),
+                entry("xlsx", "/skills/xlsx/SKILL.md"),
+            ],
+        };
+        assert_eq!(
+            idx.by_path(Path::new("/skills/xlsx/SKILL.md")).unwrap().id,
+            "xlsx"
+        );
+        assert!(idx.by_path(Path::new("/skills/none/SKILL.md")).is_none());
+    }
 }
