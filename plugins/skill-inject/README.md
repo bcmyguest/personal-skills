@@ -37,6 +37,27 @@ Session state (the dedup ledger) lives at
 `$XDG_STATE_HOME/ski/sessions/<session_id>.json`; a skill already injected — or
 loaded by the model itself — is never re-injected within a session.
 
+## Install (Claude Code)
+
+The plugin is hooks-only and needs the `ski` binary on disk. Build and install it,
+then enable the plugin from this marketplace:
+
+```sh
+cargo install --path plugins/skill-inject   # -> ~/.cargo/bin/ski
+```
+
+`hooks/hooks.json` wires three hooks through `scripts/ski-bootstrap.sh`, which
+resolves `ski` from `PATH`, then `~/.local/bin`, then `~/.cargo/bin`:
+
+| hook | matcher | command |
+|---|---|---|
+| `UserPromptSubmit` | — | `ski hook --host claude` (rank + inject) |
+| `PostToolUse` | `Read\|Skill` | `ski observe --host claude` (record model-loaded skills) |
+| `SessionStart` | `startup\|resume\|compact` | `ski session-start --host claude` (reindex; re-arm on compact) |
+
+If `ski` isn't found, the bootstrap exits 0 with no output — a missing build never
+blocks a prompt. Set `SKI_DEBUG=1` for an install hint on stderr.
+
 ## Embedding backends
 
 - **Default (offline):** deterministic hashed bag-of-words. No deps, no network,

@@ -43,6 +43,12 @@
       "description": "Kernel-style AI commit attribution (Assisted-by) enforced by a PreToolUse hook (git-attribution)",
       "source": "./plugins/git-tools",
       "strict": false
+    },
+    {
+      "name": "skill-inject",
+      "description": "Local, model-agnostic automatic skill injection: embeds the prompt locally, ranks it against skill descriptions, and injects the matched skill via UserPromptSubmit/PostToolUse/SessionStart hooks (ski). Requires the `ski` binary — cargo install --path plugins/skill-inject",
+      "source": "./plugins/skill-inject",
+      "strict": false
     }
   ]
 }
