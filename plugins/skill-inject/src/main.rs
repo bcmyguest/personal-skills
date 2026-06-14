@@ -1,13 +1,13 @@
-//! `ski` CLI. Milestone 1 implements `index` and `why`; the hook-path
-//! subcommands are stubbed until milestone 2.
+//! `ski` CLI. Milestones 1–2 implement `index`, `why`, and `hook`; `observe`
+//! and `session-start` are stubbed until milestone 3.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ski::config::Config;
 use ski::embed::{self, EmbedKind};
+use ski::hook::{self, Host};
 use ski::index::{self, Index};
-use ski::{rank, skill};
-use std::path::PathBuf;
+use ski::{paths, rank, skill};
 
 #[derive(Parser)]
 #[command(
@@ -59,41 +59,29 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Index { rebuild } => cmd_index(&cfg, rebuild),
         Cmd::Why { prompt, top } => cmd_why(&cfg, &prompt.join(" "), top),
-        Cmd::Hook { host } => stub("hook", &host),
+        Cmd::Hook { host } => hook::run(host.parse::<Host>()?),
         Cmd::Observe { host } => stub("observe", &host),
         Cmd::SessionStart { host } => stub("session-start", &host),
     }
 }
 
-fn data_dir() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
-        })
-        .join("ski")
-}
-
-fn index_path() -> PathBuf {
-    data_dir().join("index.json")
-}
-
 fn cmd_index(cfg: &Config, rebuild: bool) -> Result<()> {
+    let index_path = paths::index_path();
     let skills = skill::discover(&cfg.roots)?;
     let embedder = embed::build(&cfg.model)?;
     let prev = if rebuild {
         None
     } else {
-        Index::load(&index_path())?
+        Index::load(&index_path)?
     };
     let idx = index::build(&skills, embedder.as_ref(), prev.as_ref())?;
-    idx.save(&index_path())?;
+    idx.save(&index_path)?;
     println!(
         "indexed {} skills ({} dims) via '{}' -> {}",
         idx.skills.len(),
         idx.dim,
         idx.model,
-        index_path().display()
+        index_path.display()
     );
     Ok(())
 }

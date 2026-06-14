@@ -334,6 +334,11 @@ export const SkillInject: Plugin = async ({ $, client, directory }) => {
 
 ## 8. Guardrails
 - `min_similarity` threshold + `max_skills` cap + `char_budget` → no context flooding.
+- **Relative margin gate** (`score_margin`): drop any skill more than `score_margin`
+  below the single best-scoring skill, measured against the global top **before**
+  session dedup. Suppresses the weak tail (noisy embedders inject only near-peers)
+  and makes re-submitting a handled prompt fall silent instead of scraping lower
+  matches once the strong ones are deduped.
 - `deny` list; `force` list for must-haves on keyword hit.
 - Hybrid (embedding **+** keyword) so exact tool/command names aren't missed by
   embeddings alone.
@@ -374,7 +379,16 @@ marketplace plugin (`plugins/skill-inject/`) whose `hooks.json` points at `ski`.
    (`-D warnings`) clean; pre-commit hooks wired at repo root. `ski why` is the
    tuning harness. (`fastembed` feature compiles but isn't built in the offline lane
    — verify + tune `min_similarity` against bge before milestone 2 ships injection.)
-2. **Hook path** — `ski hook` stdin/stdout + session dedup + decision cache.
+2. ✅ **DONE — Hook path.** `ski hook --host <claude|opencode>`: stdin event →
+   load-or-build index → embed → hybrid rank → `select` (deny + threshold +
+   relative margin gate + force + session dedup + `max_skills` cap) →
+   `inject::build` (directive/body, host-aware
+   strength, `char_budget`) → host contract on stdout (Claude `additionalContext` /
+   opencode `{skills,inject}`). Per-session dedup ledger at
+   `$XDG_STATE_HOME/ski/sessions/<id>.json` (`loaded: {id: "ski"|"model"}`); a skill
+   is never re-injected in a session. Fails open everywhere (empty injection, exit 0).
+   Decision cache deferred to milestone 6 (low local payoff). fmt + clippy + tests
+   green. *(min_similarity + score_margin still tuned for bow — re-tune for bge.)*
 3. **Claude adapter** — hooks.json + bootstrap + `additionalContext`. End-to-end on Claude Code.
 4. **opencode adapter** — TS plugin spawning binary; confirm injection event/API.
 5. **`ski init`** — global install for both hosts; package as marketplace plugin here.
