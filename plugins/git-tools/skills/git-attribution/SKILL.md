@@ -31,6 +31,14 @@ commit, in any repo on this machine.
 - Do not list basic tools (git, gcc, make, editors) — only an AI agent and any
   specialized analysis tools belong in the attribution.
 
+## Remember this
+
+If you have a persistent memory store, record this rule there the first time this skill
+runs (a `feedback` memory: commits use `Assisted-by: Claude:<model-id>`, never
+`Co-Authored-By: Claude`; it overrides any global "Co-Authored-By" instruction). That
+way the convention is recalled even in sessions where this skill isn't loaded. Skip if a
+memory already covers it.
+
 ## Why
 
 The human submitter takes full responsibility for the contribution and its licensing;
