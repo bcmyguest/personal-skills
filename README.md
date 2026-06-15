@@ -1,6 +1,6 @@
 # personal-skills
 
-Brandon Guest's portable [agent skills](https://skills.sh) — one `SKILL.md` per skill,
+Portable [agent skills](https://skills.sh) — one `SKILL.md` per skill,
 in the open skills format that any modern coding agent reads (Claude Code, Codex,
 opencode, Cursor, …). The repo itself is the package; GitHub is the registry.
 
@@ -48,7 +48,7 @@ claude plugin install git-tools@personal-skills
 |--------|------|
 | `git-tools` | `git-attribution` skill **plus** a PreToolUse hook that enforces AI commit attribution on `git commit` |
 
-(`skill-inject` is migrating to its own repo and will ship like a normal binary.)
+(`skill-inject` now lives in its own repo: [bcmyguest/skill-injector](https://github.com/bcmyguest/skill-injector).)
 
 ## Bootstrap my own machine
 
@@ -83,7 +83,6 @@ skills/                          # portable agent skills — one folder per skil
 skills.sh.json                   # skills.sh groupings for the skills above
 plugins/                         # hook-bearing Claude Code plugins (local marketplace)
   git-tools/                 .claude-plugin/ + skills/git-attribution/ + hooks/ + scripts/
-  skill-inject/              ski binary + hooks (migrating to its own repo)
 .claude-plugin/marketplace.json  # registers the plugins/ above
 plugins.json                     # marketplaces + enable list for install-plugins.sh
 install-plugins.sh               # personal-machine bootstrap
