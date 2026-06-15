@@ -10,12 +10,18 @@ does nothing.
 
 ## What it wires
 
-| opencode hook        | ski command                          | purpose                                                        |
-| -------------------- | ------------------------------------ | -------------------------------------------------------------- |
-| `chat.message`       | `ski hook --host opencode`           | rank the prompt, inject the match as a synthetic text part     |
-| `tool.execute.after` | `ski observe --host opencode`        | record skills the model loaded itself (Read of SKILL.md, etc.) |
-| `event` (`session.compacted`) | `ski session-start --host opencode` | clear the loaded-ledger so skills re-inject after compaction |
-| plugin load          | `ski session-start --host opencode`  | incremental reindex (picks up new / edited skills)             |
+| opencode hook                          | ski command                         | purpose                                                          |
+| -------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `chat.message`                         | `ski hook --host opencode`          | rank the prompt; stash the matching directive for the turn      |
+| `experimental.chat.system.transform`   | —                                   | inject the stashed directive into the **system prompt**         |
+| `tool.execute.after`                   | `ski observe --host opencode`       | record skills the model loaded itself (Read of SKILL.md, etc.)  |
+| `event` (`session.compacted`)          | `ski session-start --host opencode` | clear the loaded-ledger so skills re-inject after compaction    |
+| plugin load                            | `ski session-start --host opencode` | incremental reindex (picks up new / edited skills)              |
+
+The directive is injected as **additional context** through the system prompt,
+not as a message part — it must read as injected guidance, never as text the user
+typed. `chat.message` (which sees the prompt) and `experimental.chat.system.transform`
+(which sees the system prompt) hand off through an in-memory per-session stash.
 
 The hook resolves `ski` from `PATH`, then `~/.local/bin`, then `~/.cargo/bin` —
 the same order as the Claude adapter's `ski-bootstrap.sh`.

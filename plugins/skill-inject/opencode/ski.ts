@@ -61,14 +61,22 @@ export const SkiOpencodePlugin: Plugin = async ({ $, directory }) => {
   // clearing any ledger.
   await runSki(["session-start", "--host", "opencode"], { source: "startup" })
 
+  // Directive computed in `chat.message`, consumed in the system-prompt
+  // transform of the same turn (keyed by session). chat.message can't reach the
+  // system prompt, so the two hooks hand off through here.
+  const pending = new Map<string, string>()
+
   return {
     "chat.message": async (input, output) => {
-      // The prompt is the user's text parts; skip any synthetic part we (or
-      // another plugin) injected so re-ranking never feeds on its own output.
+      // The prompt is the user's text parts; skip any synthetic part so
+      // re-ranking never feeds on injected content.
       const prompt = output.parts
         .flatMap((p) => (p.type === "text" && !p.synthetic ? [p.text] : []))
         .join("\n")
         .trim()
+      // Always clear last turn's directive first so a no-match turn can't drain
+      // a stale one.
+      pending.delete(input.sessionID)
       if (!prompt) return
 
       const raw = await runSki(["hook", "--host", "opencode"], {
@@ -85,17 +93,20 @@ export const SkiOpencodePlugin: Plugin = async ({ $, directory }) => {
         return // malformed output -> inject nothing.
       }
       const inject = decision.inject?.trim()
-      if (!inject) return
+      if (inject) pending.set(input.sessionID, inject)
+    },
 
-      // Append the directive to the user's last text part rather than pushing a
-      // new one: opencode validates part ids (must start with "prt") and an
-      // invalid part fails the whole prompt — not fail-open. Reusing an existing,
-      // already-valid part sidesteps id generation entirely. If the message has
-      // no text part (e.g. file-only), skip rather than risk an invalid part.
-      const texts = output.parts.filter((p) => p.type === "text")
-      const base = texts[texts.length - 1]
-      if (!base) return
-      base.text = `${base.text}\n\n${inject}`
+    "experimental.chat.system.transform": async (input, output) => {
+      // Inject as additional context via the system prompt, not as a message
+      // part: the directive must read as injected guidance, never as text the
+      // user typed. (Appending to the user's part also caused that; pushing a
+      // new part hits opencode's `prt`-id validation, which fails the whole
+      // prompt.) Drain the directive stashed for this session this turn.
+      if (!input.sessionID) return
+      const inject = pending.get(input.sessionID)
+      if (!inject) return
+      pending.delete(input.sessionID)
+      output.system.push(inject)
     },
 
     "tool.execute.after": async (input) => {
