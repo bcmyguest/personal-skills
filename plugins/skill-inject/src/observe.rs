@@ -38,15 +38,15 @@ struct ToolInput {
     skill: String,
 }
 
-/// Run the observer for `host`. Logic is host-agnostic today; the parameter is
-/// kept for symmetry with `hook`/`session-start` and future per-host shapes.
+/// Run the observer for `host`. `host` selects which per-host index resolves a
+/// `Read` of a `SKILL.md` path back to its skill id (see
+/// [`crate::paths::index_path`]); the `Skill`-tool path needs no index.
 pub fn run(host: Host) -> anyhow::Result<()> {
-    let _ = host;
-    let _ = observe(); // fail open: never surface an error to the harness.
+    let _ = observe(host); // fail open: never surface an error to the harness.
     Ok(())
 }
 
-fn observe() -> anyhow::Result<()> {
+fn observe(host: Host) -> anyhow::Result<()> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
     let ev: RawEvent = serde_json::from_str(&buf).unwrap_or_default();
@@ -54,7 +54,7 @@ fn observe() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let idx = Index::load(&paths::index_path()).ok().flatten();
+    let idx = Index::load(&paths::index_path(host)).ok().flatten();
     let Some(id) = skill_id_for(idx.as_ref(), &ev.tool_name, &ev.tool_input) else {
         return Ok(());
     };

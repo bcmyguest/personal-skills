@@ -76,10 +76,10 @@ fn decide(host: Host) -> anyhow::Result<Decision> {
     }
     let _ = &event.cwd; // project-scoped config/roots arrive in a later milestone.
 
-    let mut cfg = Config::default();
+    let mut cfg = Config::for_host(host);
     let embedder = embed::build(&cfg.model)?;
     cfg.calibrate_to(embedder.as_ref());
-    let idx = load_or_build_index(&cfg, embedder.as_ref())?;
+    let idx = load_or_build_index(&cfg, embedder.as_ref(), host)?;
     if idx.skills.is_empty() {
         return Ok(Decision::default());
     }
@@ -127,15 +127,20 @@ fn decide(host: Host) -> anyhow::Result<Decision> {
 /// cosine against a query from the current embedder would be meaningless. This
 /// makes switching embedders (e.g. bag-of-words -> bge) self-healing in the hot
 /// path rather than only on the next `SessionStart`.
-fn load_or_build_index(cfg: &Config, embedder: &dyn embed::Embedder) -> anyhow::Result<Index> {
-    if let Some(idx) = Index::load(&paths::index_path())? {
+fn load_or_build_index(
+    cfg: &Config,
+    embedder: &dyn embed::Embedder,
+    host: Host,
+) -> anyhow::Result<Index> {
+    let path = paths::index_path(host);
+    if let Some(idx) = Index::load(&path)? {
         if idx.model == embedder.id() {
             return Ok(idx);
         }
     }
     let skills = skill::discover(&cfg.roots)?;
     let idx = index::build(&skills, embedder, None)?;
-    let _ = idx.save(&paths::index_path());
+    let _ = idx.save(&path);
     Ok(idx)
 }
 

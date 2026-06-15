@@ -27,6 +27,9 @@ enum Cmd {
         /// Ignore the existing index and re-embed everything.
         #[arg(long)]
         rebuild: bool,
+        /// Which host's skill library to index ('claude' or 'opencode').
+        #[arg(long, default_value = "claude")]
+        host: String,
     },
     /// Rank skills against a prompt and print scores (tuning aid).
     Why {
@@ -35,6 +38,9 @@ enum Cmd {
         /// How many ranked skills to show.
         #[arg(long, default_value_t = 10)]
         top: usize,
+        /// Which host's skill library to rank against ('claude' or 'opencode').
+        #[arg(long, default_value = "claude")]
+        host: String,
     },
     /// [stub, milestone 2] hook hot-path: decide + emit injection.
     Hook {
@@ -55,18 +61,23 @@ enum Cmd {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let cfg = Config::default();
     match cli.cmd {
-        Cmd::Index { rebuild } => cmd_index(&cfg, rebuild),
-        Cmd::Why { prompt, top } => cmd_why(&cfg, &prompt.join(" "), top),
+        Cmd::Index { rebuild, host } => {
+            let host = host.parse::<Host>()?;
+            cmd_index(&Config::for_host(host), host, rebuild)
+        }
+        Cmd::Why { prompt, top, host } => {
+            let host = host.parse::<Host>()?;
+            cmd_why(&Config::for_host(host), &prompt.join(" "), top)
+        }
         Cmd::Hook { host } => hook::run(host.parse::<Host>()?),
         Cmd::Observe { host } => observe::run(host.parse::<Host>()?),
         Cmd::SessionStart { host } => session_start::run(host.parse::<Host>()?),
     }
 }
 
-fn cmd_index(cfg: &Config, rebuild: bool) -> Result<()> {
-    let index_path = paths::index_path();
+fn cmd_index(cfg: &Config, host: Host, rebuild: bool) -> Result<()> {
+    let index_path = paths::index_path(host);
     let skills = skill::discover(&cfg.roots)?;
     let embedder = embed::build(&cfg.model)?;
     let prev = if rebuild {

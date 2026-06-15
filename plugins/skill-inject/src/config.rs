@@ -2,7 +2,8 @@
 //! (`~/.config/ski/config.toml`) lands with the hook path in milestone 2.
 
 use crate::embed::Embedder;
-use std::path::PathBuf;
+use crate::hook::Host;
+use std::path::{Path, PathBuf};
 
 /// How a matched skill is delivered to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,10 +84,20 @@ impl Config {
         self.min_similarity = embedder.min_similarity();
         self.score_margin = embedder.score_margin();
     }
-}
 
-impl Default for Config {
-    fn default() -> Self {
+    /// Config scoped to `host`: discovery `roots` (and, via
+    /// [`crate::paths::index_path`], the on-disk index) cover only that host's
+    /// skill library. Keeps an injected skill name resolvable in the host that
+    /// receives it — a Claude-only id never injects into opencode and vice versa.
+    pub fn for_host(host: Host) -> Self {
+        Self {
+            roots: host_roots(host),
+            ..Self::base()
+        }
+    }
+
+    /// Every field except `roots`, which [`Config::for_host`] fills per host.
+    fn base() -> Self {
         Self {
             model: "bge-small-en-v1.5".into(),
             min_similarity: 0.30,
@@ -94,7 +105,7 @@ impl Default for Config {
             max_skills: 2,
             char_budget: 6000,
             keyword_boost: 0.15,
-            roots: default_roots(),
+            roots: Vec::new(), // overwritten by `for_host`.
             inject_mode: InjectMode::Directive,
             directive_strength: Strength::Auto,
             deny: Vec::new(),
@@ -120,10 +131,18 @@ impl Default for Config {
     }
 }
 
-fn default_roots() -> Vec<PathBuf> {
-    // Opt-in override: colon-separated roots. Unset -> the defaults below.
-    // Lets evals/tools scope discovery to one skill library without a config
-    // file (e.g. `SKI_ROOTS=~/.claude/plugins/marketplaces/anthropic-agent-skills`).
+impl Default for Config {
+    /// The Claude-scoped config. `ski index`/`why` (and the eval harness) default
+    /// here; the hot paths build [`Config::for_host`] from their `--host` flag.
+    fn default() -> Self {
+        Self::for_host(Host::Claude)
+    }
+}
+
+/// Discovery roots for `host`. `SKI_ROOTS` (colon-separated) overrides for any
+/// host — it lets evals/tools scope discovery to one skill library without a
+/// config file (e.g. `SKI_ROOTS=~/.claude/plugins/marketplaces/anthropic-agent-skills`).
+fn host_roots(host: Host) -> Vec<PathBuf> {
     if let Some(raw) = std::env::var_os("SKI_ROOTS") {
         let roots: Vec<PathBuf> = std::env::split_paths(&raw)
             .filter(|p| !p.as_os_str().is_empty())
@@ -132,14 +151,71 @@ fn default_roots() -> Vec<PathBuf> {
             return roots;
         }
     }
-    let mut v = Vec::new();
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        v.push(home.join(".claude/skills"));
-        v.push(home.join(".claude/plugins"));
-        v.push(home.join(".config/opencode/skills"));
+    match host {
+        Host::Claude => {
+            let mut v = Vec::new();
+            if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
+                v.push(h.join(".claude/skills"));
+                v.push(h.join(".claude/plugins"));
+            }
+            v.push(PathBuf::from(".claude/skills"));
+            v
+        }
+        Host::Opencode => opencode_roots(),
     }
-    v.push(PathBuf::from(".claude/skills"));
-    v
+}
+
+/// opencode declares its skill directories in `opencode.json` (`skills.paths`),
+/// not a fixed directory, so its roots are read from the global config rather
+/// than guessed. Absolute paths are used as-is; relative paths resolve against
+/// the process cwd, which the hook subprocess inherits from opencode's project
+/// dir. Project-local `opencode.json` overrides are a later milestone (the hook
+/// does not yet consume the event's `cwd`).
+fn opencode_roots() -> Vec<PathBuf> {
+    let Some(cfg_path) = opencode_config_path() else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(&cfg_path) else {
+        return Vec::new();
+    };
+    parse_opencode_paths(&raw, std::env::current_dir().ok().as_deref())
+}
+
+/// Location of opencode's global config (`$XDG_CONFIG_HOME/opencode/opencode.json`,
+/// default `~/.config/opencode/opencode.json`).
+fn opencode_config_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(base.join("opencode").join("opencode.json"))
+}
+
+/// Pull `skills.paths` out of an opencode config blob, resolving relative entries
+/// against `cwd`. A missing key or malformed JSON yields no roots (fail open: no
+/// injection rather than a wrong-host one). Pure core of [`opencode_roots`].
+fn parse_opencode_paths(raw: &str, cwd: Option<&Path>) -> Vec<PathBuf> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let Some(paths) = json
+        .get("skills")
+        .and_then(|s| s.get("paths"))
+        .and_then(|p| p.as_array())
+    else {
+        return Vec::new();
+    };
+    paths
+        .iter()
+        .filter_map(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let p = PathBuf::from(s);
+            match cwd {
+                Some(cwd) if p.is_relative() => cwd.join(p),
+                _ => p,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -170,6 +246,41 @@ mod tests {
         cfg.calibrate_to(&StubEmbedder);
         assert_eq!(cfg.min_similarity, 0.64);
         assert_eq!(cfg.score_margin, 0.12);
+    }
+
+    #[test]
+    fn claude_roots_are_claude_scoped() {
+        // Skip if an outer `SKI_ROOTS` override is active (it shadows both hosts).
+        if std::env::var_os("SKI_ROOTS").is_some() {
+            return;
+        }
+        let claude = host_roots(Host::Claude);
+        assert!(claude
+            .iter()
+            .any(|p| p.to_string_lossy().contains(".claude/skills")));
+        assert!(!claude
+            .iter()
+            .any(|p| p.to_string_lossy().contains("opencode")));
+    }
+
+    #[test]
+    fn opencode_paths_parsed_and_resolved() {
+        let json = r#"{"skills":{"paths":[".opencode/skills","/abs/repo"],"urls":[]}}"#;
+        let roots = parse_opencode_paths(json, Some(Path::new("/proj")));
+        assert_eq!(
+            roots,
+            vec![
+                PathBuf::from("/proj/.opencode/skills"),
+                PathBuf::from("/abs/repo"),
+            ]
+        );
+    }
+
+    #[test]
+    fn opencode_paths_tolerate_missing_key_and_bad_json() {
+        assert!(parse_opencode_paths("{}", None).is_empty());
+        assert!(parse_opencode_paths(r#"{"skills":{}}"#, None).is_empty());
+        assert!(parse_opencode_paths("not json", None).is_empty());
     }
 
     #[test]

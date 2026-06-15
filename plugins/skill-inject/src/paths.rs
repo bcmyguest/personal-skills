@@ -6,6 +6,7 @@
 //! Both fall back to the XDG defaults relative to `$HOME` when the env vars are
 //! unset, matching the rest of the toolchain.
 
+use crate::hook::Host;
 use std::path::PathBuf;
 
 fn home() -> PathBuf {
@@ -20,9 +21,15 @@ pub fn data_dir() -> PathBuf {
         .join("ski")
 }
 
-/// Persistent skill index.
-pub fn index_path() -> PathBuf {
-    data_dir().join("index.json")
+/// Persistent skill index for `host`. Each host indexes only its own skill
+/// library (see [`crate::config::Config::for_host`]), so the files are kept
+/// apart; Claude keeps the original `index.json` to avoid orphaning it.
+pub fn index_path(host: Host) -> PathBuf {
+    let name = match host {
+        Host::Claude => "index.json",
+        Host::Opencode => "index-opencode.json",
+    };
+    data_dir().join(name)
 }
 
 /// `$XDG_STATE_HOME/ski` (default `~/.local/state/ski`).

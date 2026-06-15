@@ -26,20 +26,20 @@ struct RawEvent {
     source: String,
 }
 
-/// Run for `host`. Host-agnostic today; parameter kept for symmetry and future
-/// per-host event shapes.
+/// Run for `host`. `host` scopes the reindex to that host's skill library and
+/// its own index file (see [`crate::config::Config::for_host`]); the session
+/// re-arm is host-agnostic (session ids are unique across hosts).
 pub fn run(host: Host) -> anyhow::Result<()> {
-    let _ = host;
-    let _ = session_start(); // fail open: never surface an error to the harness.
+    let _ = session_start(host); // fail open: never surface an error to the harness.
     Ok(())
 }
 
-fn session_start() -> anyhow::Result<()> {
+fn session_start(host: Host) -> anyhow::Result<()> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
     let ev: RawEvent = serde_json::from_str(&buf).unwrap_or_default();
 
-    reindex();
+    reindex(host);
 
     if should_rearm(&ev.source) && !ev.session_id.is_empty() {
         let path = paths::session_path(&ev.session_id);
@@ -52,15 +52,15 @@ fn session_start() -> anyhow::Result<()> {
 
 /// Incrementally refresh the persisted index. Best-effort: any failure (no
 /// skills, embedder build, IO) leaves the previous index untouched.
-fn reindex() {
-    let cfg = Config::default();
+fn reindex(host: Host) {
+    let cfg = Config::for_host(host);
     let Ok(skills) = skill::discover(&cfg.roots) else {
         return;
     };
     let Ok(embedder) = embed::build(&cfg.model) else {
         return;
     };
-    let index_path = paths::index_path();
+    let index_path = paths::index_path(host);
     let prev = Index::load(&index_path).ok().flatten();
     if let Ok(idx) = index::build(&skills, embedder.as_ref(), prev.as_ref()) {
         let _ = idx.save(&index_path);
