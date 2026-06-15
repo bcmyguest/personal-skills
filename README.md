@@ -50,6 +50,20 @@ claude plugin install git-tools@personal-skills
 
 (`skill-inject` is migrating to its own repo and will ship like a normal binary.)
 
+## Bootstrap my own machine
+
+For my own setup, [`install-plugins.sh`](install-plugins.sh) is an idempotent
+bootstrap that registers this directory as a local Claude Code marketplace plus the
+`caveman` and `anthropic-agent-skills` GitHub marketplaces, then installs and enables
+the plugins listed in [`plugins.json`](plugins.json) (currently `git-tools` + those
+external ones). It does **not** install the portable `skills/` — use `npx skills` above
+for those.
+
+```bash
+git clone git@github.com:bcmyguest/personal-skills.git ~/personal-skills
+~/personal-skills/install-plugins.sh
+```
+
 ## License
 
 See [LICENSE](LICENSE). All rights reserved; in particular, the contents may **not** be
