@@ -1,10 +1,10 @@
 {
   "name": "personal-skills",
   "owner": {
-    "name": "Brandon Guest"
+    "name": "bcmyguest"
   },
   "metadata": {
-    "description": "Brandon Guest's personal Claude Code plugins (hook-bearing). Plain skills live in skills/ and install via `npx skills`.",
+    "description": "Personal Claude Code plugins (hook-bearing). Plain skills live in skills/ and install via `npx skills`.",
     "version": "1.0.0"
   },
   "plugins": [
