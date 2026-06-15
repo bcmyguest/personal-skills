@@ -17,13 +17,9 @@
       "path": "JuliusBrussee/caveman"
     }
   ],
+  "_enable_comment": "Hook-bearing Claude plugins only. Plain skills now install via `npx skills add bcmyguest/personal-skills`.",
   "enable": [
-    "python-dev@personal-skills",
     "git-tools@personal-skills",
-    "agent-workflow@personal-skills",
-    "frontend@personal-skills",
-    "ansible@personal-skills",
-    "lemonade@personal-skills",
     "caveman@caveman",
     "document-skills@anthropic-agent-skills",
     "example-skills@anthropic-agent-skills"

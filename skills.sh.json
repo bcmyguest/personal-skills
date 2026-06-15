@@ -1,0 +1,26 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Python",
+      "description": "Python project tooling with uv — scaffold a project, day-to-day development, and pre-commit hygiene.",
+      "skills": ["uv-setup", "uv-develop", "pre-commit-setup"]
+    },
+    {
+      "title": "Agent workflow",
+      "description": "Session helpers — troubleshooting handoffs and tracking upstream GitHub issues/PRs/releases.",
+      "skills": ["handoff", "watchlist"]
+    },
+    {
+      "title": "Frontend",
+      "description": "Scaffold a React + TypeScript repo with Vite, and refactor existing frontend code as a senior engineer.",
+      "skills": ["react-ts-setup", "senior-frontend-refactor"]
+    },
+    {
+      "title": "Ops",
+      "description": "Personal infra helpers — scaffold Ansible roles and diagnose lemonade-server.",
+      "skills": ["add-ansible-role", "debug-lemonade"]
+    }
+  ]
+}
