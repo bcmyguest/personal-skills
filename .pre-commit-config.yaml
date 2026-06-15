@@ -1,26 +1,15 @@
-# Lint/format/test the `ski` crate (plugins/skill-inject). Scoped by `files:` so
-# the hooks only fire when Rust sources under that crate change; the rest of the
-# repo is unaffected. Requires cargo on PATH (rustup). Default features only =
-# offline, no model download. Enable `--features fastembed` in CI for the real
-# embedder.
+# Baseline hygiene for this skills repo (markdown SKILL.md + JSON configs + shell).
+# Language-agnostic checks only; `rev` frozen to commit SHAs for reproducibility.
 repos:
-  - repo: local
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
-      - id: ski-fmt
-        name: cargo fmt (ski)
-        entry: bash -c 'cd plugins/skill-inject && cargo fmt --all -- --check'
-        language: system
-        files: ^plugins/skill-inject/.*\.rs$
-        pass_filenames: false
-      - id: ski-clippy
-        name: cargo clippy (ski)
-        entry: bash -c 'cd plugins/skill-inject && cargo clippy --all-targets -- -D warnings'
-        language: system
-        files: ^plugins/skill-inject/.*\.rs$
-        pass_filenames: false
-      - id: ski-test
-        name: cargo test (ski)
-        entry: bash -c 'cd plugins/skill-inject && cargo test'
-        language: system
-        files: ^plugins/skill-inject/.*\.rs$
-        pass_filenames: false
+      - id: trailing-whitespace      # strip trailing whitespace
+      - id: end-of-file-fixer        # ensure exactly one trailing newline
+      - id: mixed-line-ending        # normalize line endings (LF)
+        args: [--fix=lf]
+      - id: check-yaml               # validate YAML syntax
+      - id: check-json               # validate JSON (skills.sh.json, marketplace.json, plugins.json, hooks.json)
+      - id: check-added-large-files  # block accidental large blobs
+      - id: check-merge-conflict     # block leftover conflict markers
+      - id: check-case-conflict      # catch case-insensitive filename clashes

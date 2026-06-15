@@ -35,7 +35,7 @@ python3 -c "import json;[print(p) for p in json.load(open('$cfg'))['enable']]" |
   claude plugin install "$p" 2>/dev/null || true
   claude plugin update  "$p" 2>/dev/null || true
   claude plugin enable  "$p" 2>/dev/null || true
-  
+
   # Try opencode
   opencode plugin install "$p" 2>/dev/null || true
   opencode plugin update  "$p" 2>/dev/null || true
@@ -46,4 +46,3 @@ echo "--- installed plugins ---"
 claude plugin list 2>/dev/null | grep "❯" || true
 opencode plugin list 2>/dev/null | grep "❯" || true
 echo "done. Restart your tools to apply plugin updates."
-
