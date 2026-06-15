@@ -2,7 +2,8 @@
 //!
 //! Two shapes (`Config::inject_mode`):
 //! - **directive** — a short pointer to the skill (name + description + path)
-//!   that asks the model to load it. Forcefulness set by [`Strength`].
+//!   that tells the model to invoke it via the `Skill` tool, not to read the
+//!   file. Forcefulness set by [`Strength`].
 //! - **body** — the `SKILL.md` content inlined directly, no model agency.
 //!
 //! Either way the total stays under `char_budget`: blocks are added until the
@@ -50,8 +51,11 @@ pub fn build(
 
     let header = match mode {
         InjectMode::Directive => {
-            "The following skills are likely relevant to this request. \
-             Each names a SKILL.md to read before responding:"
+            "The following skills are likely relevant to this request. Invoke each \
+             relevant one with the `Skill` tool using its name below — do NOT just \
+             read the file, as reading bypasses skill loading and tracking. (Pass the \
+             bare name, or your harness's `plugin:name` form if it requires one.) Read \
+             the listed path directly only if your environment has no `Skill` tool:"
         }
         InjectMode::Body => "Skill instructions relevant to this request are included below:",
     };
@@ -61,13 +65,13 @@ pub fn build(
 fn directive_block(entry: &Entry, strength: Strength) -> String {
     match strength {
         Strength::Hard => format!(
-            "- **{}** — {}\n  You MUST read and follow this skill before responding: {}",
-            entry.name, entry.description, entry.path
+            "- **{}** — {}\n  You MUST invoke this skill before responding: `Skill` with skill `{}` (source: {})",
+            entry.name, entry.description, entry.name, entry.path
         ),
         // Soft, and Auto defensively (callers resolve Auto upstream).
         _ => format!(
-            "- **{}** — {}\n  Read and apply it if relevant: {}",
-            entry.name, entry.description, entry.path
+            "- **{}** — {}\n  If relevant, invoke it: `Skill` with skill `{}` (source: {})",
+            entry.name, entry.description, entry.name, entry.path
         ),
     }
 }
