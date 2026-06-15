@@ -25,6 +25,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `uv-develop` | Day-to-day uv dependency + test workflow |
 | `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
 | `handoff` | Write a troubleshooting/debugging handoff summary |
+| `pickup` | Resume from the latest handoff — read, confirm, then continue |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
@@ -75,6 +76,7 @@ skills/                          # portable agent skills — one folder per skil
   uv-develop/                SKILL.md
   pre-commit-setup/          SKILL.md
   handoff/                   SKILL.md
+  pickup/                    SKILL.md
   watchlist/                 SKILL.md
   react-ts-setup/            SKILL.md + references/
   senior-frontend-refactor/  SKILL.md

@@ -9,8 +9,8 @@
     },
     {
       "title": "Agent workflow",
-      "description": "Session helpers — troubleshooting handoffs and tracking upstream GitHub issues/PRs/releases.",
-      "skills": ["handoff", "watchlist"]
+      "description": "Session helpers — troubleshooting handoffs, resuming from them, and tracking upstream GitHub issues/PRs/releases.",
+      "skills": ["handoff", "pickup", "watchlist"]
     },
     {
       "title": "Frontend",
