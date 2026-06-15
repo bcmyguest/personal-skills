@@ -13,6 +13,7 @@ pub mod inject;
 pub mod observe;
 pub mod paths;
 pub mod rank;
+pub mod rerank;
 pub mod session;
 pub mod session_start;
 pub mod skill;

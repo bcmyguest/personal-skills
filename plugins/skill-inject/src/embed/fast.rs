@@ -49,6 +49,22 @@ impl Embedder for FastEmbedder {
         } else {
             texts.to_vec()
         };
-        Ok(self.model.embed(prepped, None)?)
+        self.model.embed(prepped, None)
+    }
+
+    // Tuned by sweeping the anthropic/skills corpus (scoped + global) against the
+    // live installed skill set. bge is anisotropic: unrelated prompts still cosine
+    // ~0.50-0.62 and genuine matches sit ~0.66+, so the floor is set at the knee
+    // (0.64) — it rejects the noise tail while keeping real hits, trading one
+    // borderline positive for two fewer false injections. The lone residual leak
+    // is genuinely on-topic (a git skill on a git prompt). Margin 0.12 keeps only
+    // near-peers of the leader. MiniLM shares this family tuning until it gets its
+    // own corpus pass; it is an opt-in lite alternative.
+    fn min_similarity(&self) -> f32 {
+        0.64
+    }
+
+    fn score_margin(&self) -> f32 {
+        0.12
     }
 }

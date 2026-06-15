@@ -1,6 +1,7 @@
 //! Runtime configuration. Milestone 1 uses defaults only; a config-file loader
 //! (`~/.config/ski/config.toml`) lands with the hook path in milestone 2.
 
+use crate::embed::Embedder;
 use std::path::PathBuf;
 
 /// How a matched skill is delivered to the model.
@@ -53,6 +54,35 @@ pub struct Config {
     pub deny: Vec<String>,
     /// Skill ids injected whenever a keyword hits, even below `min_similarity`.
     pub force: Vec<String>,
+
+    // --- Stage-2 reranking (see `crate::rerank`). The thresholds below are on the
+    // cross-encoder's logit scale, unrelated to the cosine thresholds above, and
+    // are *not* touched by `calibrate_to`. ---
+    /// Stage-1 score below which a prompt is treated as having no relevant skill,
+    /// so the (costly) reranker is skipped entirely.
+    pub recall_floor: f32,
+    /// Stage-1 score above which the top match may be a confident lone winner.
+    pub high_conf: f32,
+    /// Minimum stage-1 gap from the top match to the runner-up for the top to
+    /// count as a *lone* winner (and thus skip reranking).
+    pub clear_gap: f32,
+    /// How many stage-1 candidates are handed to the reranker.
+    pub rerank_top_k: usize,
+    /// Minimum reranker logit for a skill to be injected.
+    pub rerank_min: f32,
+    /// Max reranker-logit gap below the best reranked skill for a peer to ride along.
+    pub rerank_margin: f32,
+}
+
+impl Config {
+    /// Adopt the active embedder's score thresholds. Cosine distributions are a
+    /// property of the embedding space, not user preference, so `min_similarity`
+    /// and `score_margin` follow the embedder that actually ran (bge vs the
+    /// offline bag-of-words fallback). Other fields are left untouched.
+    pub fn calibrate_to(&mut self, embedder: &dyn Embedder) {
+        self.min_similarity = embedder.min_similarity();
+        self.score_margin = embedder.score_margin();
+    }
 }
 
 impl Default for Config {
@@ -69,6 +99,23 @@ impl Default for Config {
             directive_strength: Strength::Auto,
             deny: Vec::new(),
             force: Vec::new(),
+            // Reranker gate + thresholds, calibrated on the anthropic/skills
+            // corpus against the JINA turbo reranker (see `examples/rerank_probe`).
+            // Scoped top-1 accuracy: 76% stage-1 only -> 88% with reranking.
+            //
+            // `recall_floor` skips the reranker when nothing is plausibly relevant.
+            // bge is anisotropic (unrelated prompts still cosine ~0.5), which
+            // compresses the usable range: 0.50 skips clearly-irrelevant prompts
+            // without dropping real-but-weak matches. `high_conf` is effectively
+            // disabled (2.0): a confidence-based skip measurably *hurt* accuracy,
+            // because the bi-encoder is confidently wrong on the confusable pairs
+            // the reranker exists to fix. It is retained as a tunable, not removed.
+            recall_floor: 0.50,
+            high_conf: 2.0,
+            clear_gap: 0.12,
+            rerank_top_k: 12,
+            rerank_min: -2.5,
+            rerank_margin: 2.0,
         }
     }
 }
@@ -93,4 +140,48 @@ fn default_roots() -> Vec<PathBuf> {
     }
     v.push(PathBuf::from(".claude/skills"));
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::embed::{bow::BowEmbedder, EmbedKind, Embedder};
+
+    /// Stands in for a dense embedder with its own (non-default) thresholds.
+    struct StubEmbedder;
+    impl Embedder for StubEmbedder {
+        fn id(&self) -> String {
+            "stub".into()
+        }
+        fn embed(&self, _: &[String], _: EmbedKind) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(vec![])
+        }
+        fn min_similarity(&self) -> f32 {
+            0.64
+        }
+        fn score_margin(&self) -> f32 {
+            0.12
+        }
+    }
+
+    #[test]
+    fn calibrate_adopts_embedder_thresholds() {
+        let mut cfg = Config::default();
+        cfg.calibrate_to(&StubEmbedder);
+        assert_eq!(cfg.min_similarity, 0.64);
+        assert_eq!(cfg.score_margin, 0.12);
+    }
+
+    #[test]
+    fn calibrate_to_bow_uses_trait_defaults() {
+        // The bag-of-words embedder doesn't override the trait defaults.
+        let mut cfg = Config {
+            min_similarity: 0.99,
+            score_margin: 0.99,
+            ..Default::default()
+        };
+        cfg.calibrate_to(&BowEmbedder::new());
+        assert_eq!(cfg.min_similarity, 0.30);
+        assert_eq!(cfg.score_margin, 0.15);
+    }
 }

@@ -14,7 +14,7 @@ use crate::embed::{self, EmbedKind};
 use crate::index::{self, Index};
 use crate::rank::Hit;
 use crate::session::{Session, Source};
-use crate::{inject, paths, rank, skill};
+use crate::{inject, paths, rank, rerank, skill};
 use serde::Deserialize;
 use std::io::Read;
 use std::str::FromStr;
@@ -76,13 +76,14 @@ fn decide(host: Host) -> anyhow::Result<Decision> {
     }
     let _ = &event.cwd; // project-scoped config/roots arrive in a later milestone.
 
-    let cfg = Config::default();
-    let idx = load_or_build_index(&cfg)?;
+    let mut cfg = Config::default();
+    let embedder = embed::build(&cfg.model)?;
+    cfg.calibrate_to(embedder.as_ref());
+    let idx = load_or_build_index(&cfg, embedder.as_ref())?;
     if idx.skills.is_empty() {
         return Ok(Decision::default());
     }
 
-    let embedder = embed::build(&cfg.model)?;
     let query = embedder
         .embed(std::slice::from_ref(&event.prompt), EmbedKind::Query)?
         .remove(0);
@@ -90,7 +91,15 @@ fn decide(host: Host) -> anyhow::Result<Decision> {
 
     let session_path = paths::session_path(&event.session_id);
     let mut session = Session::load(&session_path);
-    let selected = select(hits, &cfg, &session);
+    // Stage 2: when stage-1 is ambiguous, let the cross-encoder decide; otherwise
+    // (confident winner or nothing relevant) keep the cheap stage-1 result.
+    let selected = match rerank::is_ambiguous(&hits, &cfg)
+        .then(|| rerank::rerank(&hits, &idx, &event.prompt, &cfg))
+        .flatten()
+    {
+        Some(reranked) => select_reranked(reranked, &cfg, &session),
+        None => select(hits, &cfg, &session),
+    };
     if selected.is_empty() {
         return Ok(Decision::default());
     }
@@ -112,15 +121,20 @@ fn decide(host: Host) -> anyhow::Result<Decision> {
     })
 }
 
-/// Load the persisted index; on first run build it once so the hook works before
-/// an explicit `ski index`.
-fn load_or_build_index(cfg: &Config) -> anyhow::Result<Index> {
+/// Load the persisted index; build it on first run so the hook works before an
+/// explicit `ski index`. Rebuilds when the stored index was made by a different
+/// embedder — its vectors live in another space (and often another dimension), so
+/// cosine against a query from the current embedder would be meaningless. This
+/// makes switching embedders (e.g. bag-of-words -> bge) self-healing in the hot
+/// path rather than only on the next `SessionStart`.
+fn load_or_build_index(cfg: &Config, embedder: &dyn embed::Embedder) -> anyhow::Result<Index> {
     if let Some(idx) = Index::load(&paths::index_path())? {
-        return Ok(idx);
+        if idx.model == embedder.id() {
+            return Ok(idx);
+        }
     }
     let skills = skill::discover(&cfg.roots)?;
-    let embedder = embed::build(&cfg.model)?;
-    let idx = index::build(&skills, embedder.as_ref(), None)?;
+    let idx = index::build(&skills, embedder, None)?;
     let _ = idx.save(&paths::index_path());
     Ok(idx)
 }
@@ -141,6 +155,19 @@ fn select(hits: Vec<Hit>, cfg: &Config, session: &Session) -> Vec<Hit> {
             let forced = cfg.force.contains(&h.id) && h.keyword > 0.0;
             forced || (h.score >= cfg.min_similarity && h.score >= top - cfg.score_margin)
         })
+        .filter(|h| !session.is_loaded(&h.id))
+        .take(cfg.max_skills)
+        .collect()
+}
+
+/// Guardrails for the reranked path. The reranker scores already passed their own
+/// floor/margin in [`rerank::passes`], so this only drops denied and
+/// already-loaded skills and caps the count — the reranker-scale equivalent of the
+/// tail of [`select`].
+fn select_reranked(reranked: Vec<Hit>, cfg: &Config, session: &Session) -> Vec<Hit> {
+    rerank::passes(&reranked, cfg)
+        .into_iter()
+        .filter(|h| !cfg.deny.contains(&h.id))
         .filter(|h| !session.is_loaded(&h.id))
         .take(cfg.max_skills)
         .collect()

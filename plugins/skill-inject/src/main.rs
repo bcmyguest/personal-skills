@@ -7,7 +7,7 @@ use ski::config::Config;
 use ski::embed::{self, EmbedKind};
 use ski::hook::{self, Host};
 use ski::index::{self, Index};
-use ski::{observe, paths, rank, session_start, skill};
+use ski::{observe, paths, rank, rerank, session_start, skill};
 
 #[derive(Parser)]
 #[command(
@@ -87,28 +87,35 @@ fn cmd_index(cfg: &Config, rebuild: bool) -> Result<()> {
 }
 
 fn cmd_why(cfg: &Config, prompt: &str, top: usize) -> Result<()> {
+    let mut cfg = cfg.clone();
     let skills = skill::discover(&cfg.roots)?;
     if skills.is_empty() {
         println!("no skills found in roots: {:?}", cfg.roots);
         return Ok(());
     }
     let embedder = embed::build(&cfg.model)?;
+    cfg.calibrate_to(embedder.as_ref());
     let idx = index::build(&skills, embedder.as_ref(), None)?;
     let query = embedder
         .embed(&[prompt.to_string()], EmbedKind::Query)?
         .remove(0);
-    let hits = rank::rank_all(&query, prompt, &idx, cfg);
+    let hits = rank::rank_all(&query, prompt, &idx, &cfg);
 
-    println!(
-        "embedder '{}'  threshold {:.2}  prompt: {prompt:?}",
-        idx.model, cfg.min_similarity
-    );
-    for h in hits.iter().take(top) {
-        let mark = if h.score >= cfg.min_similarity {
-            "*"
-        } else {
-            " "
-        };
+    // Mirror the hook's decision so `why` (and the eval that drives it) reflects
+    // the real pipeline: stage-1 cosine, or stage-2 reranker logits when the gate
+    // fires. The `*` mark means the row cleared the threshold for whichever stage
+    // produced it.
+    let (rows, threshold, stage) = match rerank::is_ambiguous(&hits, &cfg)
+        .then(|| rerank::rerank(&hits, &idx, prompt, &cfg))
+        .flatten()
+    {
+        Some(reranked) => (reranked, cfg.rerank_min, "rerank:turbo".to_string()),
+        None => (hits, cfg.min_similarity, format!("stage1:{}", idx.model)),
+    };
+
+    println!("stage {stage}  threshold {threshold:.2}  prompt: {prompt:?}");
+    for h in rows.iter().take(top) {
+        let mark = if h.score >= threshold { "*" } else { " " };
         println!(
             "{mark} {:<26} score {:.3}  (cos {:.3} + kw {:.3})",
             h.name, h.score, h.cosine, h.keyword

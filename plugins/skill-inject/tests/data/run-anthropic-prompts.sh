@@ -41,7 +41,10 @@ else
 fi
 
 cargo="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
-ski() { ( cd "$crate" && "$cargo" run -q -- "$@" ); }
+# SKI_FEATURES=fastembed exercises the real bge embedder; unset uses bag-of-words.
+feat_args=()
+[[ -n "${SKI_FEATURES:-}" ]] && feat_args=(--features "$SKI_FEATURES")
+ski() { ( cd "$crate" && "$cargo" run -q "${feat_args[@]}" -- "$@" ); }
 
 # One warm-up build so `cargo run` chatter doesn't pollute the first result.
 ski why warmup --top 1 >/dev/null 2>&1 || true
@@ -59,7 +62,7 @@ while IFS=$'\t' read -r want kind prompt; do
   mark="${line:0:1}"
   rest="${line:2}"
   got="${rest%% *}"
-  score="$(sed -n 's/.* score \([0-9.]*\).*/\1/p' <<<"$line")"
+  score="$(sed -n 's/.* score \(-\{0,1\}[0-9.]*\).*/\1/p' <<<"$line")"
 
   if [[ "$want" == "(none)" ]]; then
     # negative: pass when nothing cleared the threshold (top hit unstarred)

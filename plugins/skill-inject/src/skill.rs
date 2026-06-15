@@ -10,12 +10,29 @@ pub struct Skill {
     pub id: String,
     pub name: String,
     pub description: String,
+    /// First few prose lines of the body — dense topical signal that disambiguates
+    /// confusable descriptions without the dilution of the full document. Embedded
+    /// alongside `description`; see [`Skill::doc_text`].
+    pub body_head: String,
     /// Keywords for the hybrid keyword boost: explicit `keywords`/`aliases`
     /// frontmatter, plus tokens derived from the name.
     pub keywords: Vec<String>,
     pub path: PathBuf,
     /// Content hash for index cache invalidation.
     pub hash: String,
+}
+
+impl Skill {
+    /// Text fed to the document embedder: the curated description plus the body
+    /// head. Keeping them together gives the bi-encoder more topical signal than
+    /// the one-line description alone.
+    pub fn doc_text(&self) -> String {
+        if self.body_head.is_empty() {
+            self.description.clone()
+        } else {
+            format!("{}\n{}", self.description, self.body_head)
+        }
+    }
 }
 
 /// Walk `roots` and parse every `SKILL.md` found.
@@ -75,10 +92,42 @@ pub fn parse_file(path: &Path) -> anyhow::Result<Option<Skill>> {
         id: name.clone(),
         name,
         description,
+        body_head: body_head(&content, 8, 600),
         keywords,
         path: path.to_path_buf(),
         hash,
     }))
+}
+
+/// Pull the first `max_lines` non-blank body lines (after the frontmatter),
+/// capped at `max_chars`. Markdown heading/list markers are stripped so the
+/// embedder sees prose, not punctuation. Empty when there is no body.
+fn body_head(content: &str, max_lines: usize, max_chars: usize) -> String {
+    let mut lines = content.lines();
+    // Skip the leading `--- ... ---` frontmatter block, if present.
+    if lines.next().map(|l| l.trim()) == Some("---") {
+        for l in lines.by_ref() {
+            if l.trim() == "---" {
+                break;
+            }
+        }
+    }
+    let mut out: Vec<String> = Vec::new();
+    for l in lines {
+        let t = l.trim().trim_start_matches(['#', '-', '*', '>', ' ']).trim();
+        if t.is_empty() {
+            continue;
+        }
+        out.push(t.to_string());
+        if out.len() >= max_lines {
+            break;
+        }
+    }
+    let joined = out.join(" ");
+    match joined.char_indices().nth(max_chars) {
+        Some((i, _)) => joined[..i].to_string(),
+        None => joined,
+    }
 }
 
 /// Extract `name`, `description`, and `keywords`/`aliases` from a leading
