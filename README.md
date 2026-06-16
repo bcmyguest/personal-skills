@@ -24,8 +24,6 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `uv-setup` | Bootstrap a new Python project with uv |
 | `uv-develop` | Day-to-day uv dependency + test workflow |
 | `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
-| `handoff` | Write a troubleshooting/debugging handoff summary |
-| `pickup` | Resume from the latest handoff — read, confirm, then continue |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
@@ -34,6 +32,9 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 
 Layout: one folder per skill under [`skills/`](skills), each with a `SKILL.md` plus any
 resources it needs (`references/`, `templates/`, `config.json`).
+
+The portable `handoff` and `pickup` skills moved to their own repo —
+[bcmyguest/baton](https://github.com/bcmyguest/baton) (`npx skills add bcmyguest/baton`).
 
 ## Claude Code plugins (hook-bearing — not plain skills)
 
@@ -73,8 +74,6 @@ skills/                          # portable agent skills — one folder per skil
   uv-setup/                  SKILL.md
   uv-develop/                SKILL.md
   pre-commit-setup/          SKILL.md
-  handoff/                   SKILL.md
-  pickup/                    SKILL.md
   watchlist/                 SKILL.md
   react-ts-setup/            SKILL.md + references/
   senior-frontend-refactor/  SKILL.md
