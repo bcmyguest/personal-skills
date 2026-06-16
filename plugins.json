@@ -2,9 +2,9 @@
   "_comment": "Claude plugins to load on a new machine/install. Run ./install-plugins.sh to apply.",
   "marketplaces": [
     {
-      "name": "personal-skills",
-      "type": "local",
-      "path": "."
+      "name": "assisted-by",
+      "type": "github",
+      "path": "bcmyguest/assisted-by"
     },
     {
       "name": "anthropic-agent-skills",
@@ -19,7 +19,7 @@
   ],
   "_enable_comment": "Hook-bearing Claude plugins only. Plain skills now install via `npx skills add bcmyguest/personal-skills`.",
   "enable": [
-    "git-tools@personal-skills",
+    "assisted-by@assisted-by",
     "caveman@caveman",
     "document-skills@anthropic-agent-skills",
     "example-skills@anthropic-agent-skills"

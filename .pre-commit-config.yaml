@@ -9,7 +9,7 @@ repos:
       - id: mixed-line-ending        # normalize line endings (LF)
         args: [--fix=lf]
       - id: check-yaml               # validate YAML syntax
-      - id: check-json               # validate JSON (skills.sh.json, marketplace.json, plugins.json, hooks.json)
+      - id: check-json               # validate JSON (skills.sh.json, plugins.json)
       - id: check-added-large-files  # block accidental large blobs
       - id: check-merge-conflict     # block leftover conflict markers
       - id: check-case-conflict      # catch case-insensitive filename clashes

@@ -37,28 +37,26 @@ resources it needs (`references/`, `templates/`, `config.json`).
 
 ## Claude Code plugins (hook-bearing — not plain skills)
 
-Some tools need a hook, which the portable skills format can't carry. Those stay Claude
-Code plugins under [`plugins/`](plugins), installed via the local marketplace:
+Some tools need a hook, which the portable skills format can't carry. Those are Claude
+Code plugins and now live in their own repos:
+
+| Plugin | What | Repo |
+|--------|------|------|
+| `assisted-by` | `git-attribution` skill **plus** a PreToolUse hook that enforces AI commit attribution on `git commit` | [bcmyguest/assisted-by](https://github.com/bcmyguest/assisted-by) |
+| `skill-inject` | Local, model-agnostic automatic skill injection | [bcmyguest/skill-injector](https://github.com/bcmyguest/skill-injector) |
 
 ```bash
-claude plugin marketplace add bcmyguest/personal-skills
-claude plugin install git-tools@personal-skills
+claude plugin marketplace add bcmyguest/assisted-by
+claude plugin install assisted-by@assisted-by
 ```
-
-| Plugin | What |
-|--------|------|
-| `git-tools` | `git-attribution` skill **plus** a PreToolUse hook that enforces AI commit attribution on `git commit` |
-
-(`skill-inject` now lives in its own repo: [bcmyguest/skill-injector](https://github.com/bcmyguest/skill-injector).)
 
 ## Bootstrap my own machine
 
 For my own setup, [`install-plugins.sh`](install-plugins.sh) is an idempotent
-bootstrap that registers this directory as a local Claude Code marketplace plus the
-`caveman` and `anthropic-agent-skills` GitHub marketplaces, then installs and enables
-the plugins listed in [`plugins.json`](plugins.json) (currently `git-tools` + those
-external ones). It does **not** install the portable `skills/` — use `npx skills` above
-for those.
+bootstrap that registers the `assisted-by`, `caveman`, and `anthropic-agent-skills`
+GitHub marketplaces, then installs and enables the plugins listed in
+[`plugins.json`](plugins.json). It does **not** install the portable `skills/` — use
+`npx skills` above for those.
 
 ```bash
 git clone git@github.com:bcmyguest/personal-skills.git ~/personal-skills
@@ -83,11 +81,8 @@ skills/                          # portable agent skills — one folder per skil
   add-ansible-role/          SKILL.md + config.json + templates/
   debug-lemonade/            SKILL.md
 skills.sh.json                   # skills.sh groupings for the skills above
-plugins/                         # hook-bearing Claude Code plugins (local marketplace)
-  git-tools/                 .claude-plugin/ + skills/git-attribution/ + hooks/ + scripts/
-.claude-plugin/marketplace.json  # registers the plugins/ above
-plugins.json                     # marketplaces + enable list for install-plugins.sh
-install-plugins.sh               # personal-machine bootstrap
+plugins.json                     # external marketplaces + enable list for install-plugins.sh
+install-plugins.sh               # personal-machine bootstrap (hook-bearing plugins)
 ```
 
 ## License
