@@ -120,7 +120,7 @@ set `python-version` to the version you pinned in `.python-version`:
 ```toml
 [tool.pyrefly]
 project-includes = ["src", "tests"]
-python-version = "3.12"
+python-version = "3.13"   # match the version pinned in step 3 / .python-version
 # tighten individual diagnostics here if the user wants stricter checking:
 # [tool.pyrefly.errors]
 # bad-assignment = true
@@ -128,6 +128,13 @@ python-version = "3.12"
 
 ```bash
 uv run pyrefly check
+```
+
+Add pytest as the test runner while you're installing dev tooling — the README run/validate
+commands (step 6) and the final checklist assume it's present:
+
+```bash
+uv add --dev pytest
 ```
 
 ## 5. Add ruff + pyrefly pre-commit hooks
@@ -276,6 +283,7 @@ If you change the Python version later, update both `FROM` lines and re-test.
 - [ ] `.python-version` pinned to a stable release; `requires-python` matches
 - [ ] `.gitignore` checked: `.python-version` committed, `.venv` + `__pycache__` ignored at any depth
 - [ ] type checker installed and `uv run pyrefly check` is clean
+- [ ] pytest installed as a dev dep (`uv add --dev pytest`)
 - [ ] ruff + pyrefly pre-commit hooks pinned to tagged revs; `pre-commit install` run
 - [ ] README documents run / build / validate, all via `uv`
 - [ ] Dockerfile added if it's a service/container (versions in lockstep with the pin)

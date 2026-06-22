@@ -1,5 +1,6 @@
 ---
 name: watchlist
+argument-hint: "[check | add <url|owner/repo#123> [note] | remove <id> | list]"
 description: Check upstream GitHub issues, PRs, and releases the user is waiting on, and report what moved since the last check. Use whenever the user invokes /watchlist, asks "any movement on that PR/issue", "check the watchlist", "are we still waiting on X", "has that llama.cpp/ollama/lemonade thing landed yet", or asks to start watching / stop watching an upstream issue, PR, or release. Also use when the user says "remind me to check back on this issue" or "add this to the things we're waiting on".
 ---
 

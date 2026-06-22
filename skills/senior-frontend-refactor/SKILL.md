@@ -1,5 +1,6 @@
 ---
 name: senior-frontend-refactor
+argument-hint: "[file-or-directory to refactor]"
 description: Refactor frontend code as a senior engineer — improves structure, readability, performance, and test coverage while preserving behavior. Use when the user asks to refactor, clean up, simplify, or restructure existing frontend/React/TypeScript code. For scaffolding a brand-new frontend repo, use react-ts-setup instead.
 effort: high
 ---

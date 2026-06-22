@@ -1,5 +1,6 @@
 ---
 name: add-ansible-role
+argument-hint: "[tool-name to add a role for]"
 description: Add a new role to the user's local Ansible setup (the playbook that provisions their machine with dev tools — location is read from this skill's config.json). Use whenever the user invokes /add-ansible-role, asks to "add an ansible role for X", "add X to my ansible setup", "manage/install X with ansible", or wants a CLI tool's installation automated the way their other ansible-managed tools are. Also use when updating or fixing an existing role in that playbook.
 ---
 
