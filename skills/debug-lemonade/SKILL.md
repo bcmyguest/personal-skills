@@ -10,6 +10,15 @@ each step is cheap and rules out a whole class before touching anything privileg
 `sudo` needs a password: when a privileged command is required, ask the user to run it
 with the `!` prefix instead of attempting it.
 
+**Route by symptom:**
+
+- Server not responding / Open WebUI shows no models → **Step 1** (is the right lemond up?).
+- A specific model won't load or errors → **Step 2**.
+- Slow inference / GPU / ROCm / Vulkan questions → **Step 3**.
+- Deciding lemond-vs-llama.cpp blame, or whether to escalate → **Step 4**.
+
+Read the **Topology** below first — most failures here are a known consequence of it.
+
 ## Topology (machine "d")
 
 - AMD Strix Halo (gfx1151) APU, 128 GB unified RAM, Ubuntu 24.04. GPU compute runs on

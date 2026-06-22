@@ -5,6 +5,13 @@ description: Add a new role to the user's local Ansible setup (the playbook that
 
 # Add a role to the user's Ansible setup
 
+**At a glance:** (0) read `config.json` to find the playbook → (1) pick the archetype
+(GitHub release / package manager / install script) → (2) gather the real release asset
+from the live GitHub API → (3) write the role from the bundled template, version-driven
+and idempotent → (4) register it in the playbook and verify a second run reports no
+changes. Match the repo's existing conventions throughout; fix the common bugs (hardcoded
+versions, no-op PATH `shell:` tasks) rather than copying them.
+
 ## Step 0 — Locate the setup
 
 Read `config.json` next to this SKILL.md:

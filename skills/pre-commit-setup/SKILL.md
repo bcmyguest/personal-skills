@@ -10,6 +10,10 @@ hooks every repo should have (end-of-line/whitespace normalization, file checks)
 specific linters and formatters (e.g. ruff + pyrefly from the **uv-setup** skill) are
 appended to the same `.pre-commit-config.yaml`, not configured here.
 
+**Steps:** (1) install pre-commit as a tracked dev dep → (2) write the baseline hygiene
+hooks → (3) `pre-commit install` and run across the repo → (4) keep it healthy by pinning
+to commit SHAs, not blindly auto-updating.
+
 ## 1. Install pre-commit
 
 Use the project's package manager so the dependency is tracked. In a uv project:

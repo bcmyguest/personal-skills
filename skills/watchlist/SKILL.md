@@ -11,6 +11,11 @@ what "resolved" looks like — read those fields before reporting, because raw G
 (open/closed) is often not the real question. Example: a PR may merge but only add CLI
 support, while the user is waiting for *server* support.
 
+**At a glance:** parse the argument into a subcommand (`check` / `add` / `remove` /
+`list`) → for a check, hit the GitHub API for every item in one Bash call, compare against
+each entry's `last_state`, and judge any movement against `waiting_for` → rewrite the JSON
+→ report verdict-first. The core skill is the relevance judgment, not the raw open/closed.
+
 ## Subcommands
 
 Parse the argument string:

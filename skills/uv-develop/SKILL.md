@@ -11,6 +11,10 @@ Never fall back to bare `python`, `pip`, `pip-tools`, `virtualenv`, `poetry`, or
 
 If the project does not yet exist or is not set up, use the **uv-setup** skill first.
 
+**At a glance:** `uv sync --frozen` (reproduce the env) → edit → `uv run -m pytest` (after
+*every* change) → `uv add` / `uv remove` to change deps. Never hand-edit `uv.lock`, never
+`uv pip install`. Full command table in [Quick reference](#quick-reference).
+
 ## Initial setup of an existing project
 
 When you clone or first open a project, reproduce the locked environment exactly:

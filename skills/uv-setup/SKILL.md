@@ -9,6 +9,11 @@ Scaffold every new Python project with `uv`. Work top to bottom; confirm choices
 the user where noted. After setup, day-to-day work follows the **uv-develop** skill, and
 the pre-commit baseline comes from the **pre-commit-setup** skill.
 
+**Steps:** (0) ask project type → (1) `uv init --package` → (2) confirm packaging →
+(3) pin Python → (4) type checker (pyrefly) → (5) ruff + pyrefly pre-commit hooks →
+(6) document run/build/validate → (7) Dockerfile if it's a service. Steps 6–7 are
+conditional on the project type from step 0.
+
 ## 0. Ask the user what kind of project this is
 
 Do this **before scaffolding** — the answer changes packaging, the build step, and

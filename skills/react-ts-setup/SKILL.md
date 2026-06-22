@@ -19,6 +19,13 @@ version that drifts between `.nvmrc`, CI, and Docker; the steps below keep it in
 > `package.json` by hand and don't copy version numbers from this skill — let
 > `create-vite` and `pnpm add` install the newest releases, and trust the lockfile.
 
+**Steps:** (0) ask the decisions → (1) scaffold with Vite → (2) pin Node everywhere →
+(3) ESLint + Prettier → (4) React Compiler + strict TS → (5) Vitest + Testing Library →
+(6) UI framework + theme → (7) husky + lint-staged + pre-commit hooks → (8) `.vscode`
+settings → (9) env files → (10) `.gitignore` check → (11) dev Docker (if chosen) →
+(12) CI (if chosen) → (13) README → (14) verify lint/typecheck/test/build all green.
+Steps 6, 11, and 12 depend on the step-0 answers.
+
 ## 0. Ask the decisions up front
 
 Don't assume — ask, then use the answers to decide which steps apply:
