@@ -51,7 +51,7 @@ Add and remove packages through uv so `pyproject.toml` and `uv.lock` stay in syn
 
 ```bash
 uv add <package>                 # runtime dependency
-uv add --dev <package>           # dev-only (pytest, ruff, pyright, ...)
+uv add --dev <package>           # dev-only (pytest, ruff, pyrefly, ...)
 uv add '<package>>=2,<3'         # with a version constraint
 uv remove <package>              # drop a dependency
 ```

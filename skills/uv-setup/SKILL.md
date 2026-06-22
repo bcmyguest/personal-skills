@@ -1,6 +1,6 @@
 ---
 name: uv-setup
-description: Bootstrap a new Python project with uv the right way — asks the project type up front, then uv init, packaged layout, pinned Python version, a type checker (pyright by default), ruff + pyright pre-commit hooks, run/build/validate docs, and a multi-stage Dockerfile for services. Use when starting a new Python project, scaffolding a repo, or asked to "set up" or "initialize" a Python project. For day-to-day work in an existing project, use uv-develop instead.
+description: Bootstrap a new Python project with uv the right way — asks the project type up front, then uv init, packaged layout, pinned Python version, a type checker (pyrefly by default), ruff + pyrefly pre-commit hooks, run/build/validate docs, and a multi-stage Dockerfile for services. Use when starting a new Python project, scaffolding a repo, or asked to "set up" or "initialize" a Python project. For day-to-day work in an existing project, use uv-develop instead.
 ---
 
 # Setting up a uv project
@@ -100,40 +100,45 @@ git check-ignore a/__pycache__/x.pyc         # expect: printed — ignored at an
 If `git check-ignore .python-version` prints a match, find the offending rule (the `-v`
 flag shows which file/line) and remove or tighten it.
 
-## 4. Set up a type checker (pyright by default)
+## 4. Set up a type checker (pyrefly by default)
 
-Default to **pyright**. Ask the user if they prefer another checker (e.g. mypy, ty);
-otherwise use pyright.
+Default to **pyrefly**. Ask the user if they prefer another checker (e.g. mypy, ty, pyright);
+otherwise use pyrefly.
 
 ```bash
-uv add --dev pyright
+uv add --dev pyrefly
 ```
 
-Add a config block to `pyproject.toml` and verify it runs clean:
+Add a config block to `pyproject.toml` and verify it runs clean. Keys are hyphenated;
+set `python-version` to the version you pinned in `.python-version`:
 
 ```toml
-[tool.pyright]
-include = ["src", "tests"]
-typeCheckingMode = "standard"   # bump to "strict" for new code if the user wants it
-venvPath = "."
-venv = ".venv"
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+python-version = "3.12"
+# tighten individual diagnostics here if the user wants stricter checking:
+# [tool.pyrefly.errors]
+# bad-assignment = true
 ```
 
 ```bash
-uv run pyright
+uv run pyrefly check
 ```
 
-## 5. Add ruff + pyright pre-commit hooks
+## 5. Add ruff + pyrefly pre-commit hooks
 
-Add the linters as dev deps and wire up pre-commit. Use the official mirrors and pin to a
-tagged `rev` (check each repo's latest release rather than guessing):
-
-- ruff: <https://github.com/astral-sh/ruff-pre-commit>
-- pyright: <https://github.com/RobertCraigie/pyright-python>
+Add the linters as dev deps and wire up pre-commit:
 
 ```bash
 uv add --dev ruff pre-commit
 ```
+
+ruff runs from its official mirror, pinned to a tagged `rev` (check the latest release
+rather than guessing). pyrefly runs as a **local** hook via `uv run` so it executes the
+project's own dev-dep pyrefly inside the project venv — this is what lets it resolve
+third-party imports. The published `facebook/pyrefly-pre-commit` hook installs pyrefly in
+an isolated env *without* your dependencies, so it falsely reports `missing-import` for
+every third-party package; don't use it for a uv project.
 
 `.pre-commit-config.yaml`:
 
@@ -145,10 +150,15 @@ repos:
       - id: ruff-check     # lint
         args: [--fix]
       - id: ruff-format    # format
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: vX.Y.Z            # use the latest tagged release
+  - repo: local
     hooks:
-      - id: pyright
+      - id: pyrefly
+        name: pyrefly
+        entry: uv run pyrefly check
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false   # pyrefly checks the whole project, not single files
+        require_serial: true
 ```
 
 This skill covers the project-specific linting hooks. For the standard hygiene hooks
@@ -260,8 +270,8 @@ If you change the Python version later, update both `FROM` lines and re-test.
 - [ ] `tool.uv.package = true` and a real `src/` layout
 - [ ] `.python-version` pinned to a stable release; `requires-python` matches
 - [ ] `.gitignore` checked: `.python-version` committed, `.venv` + `__pycache__` ignored at any depth
-- [ ] type checker installed and `uv run pyright` is clean
-- [ ] ruff + pyright pre-commit hooks pinned to tagged revs; `pre-commit install` run
+- [ ] type checker installed and `uv run pyrefly check` is clean
+- [ ] ruff + pyrefly pre-commit hooks pinned to tagged revs; `pre-commit install` run
 - [ ] README documents run / build / validate, all via `uv`
 - [ ] Dockerfile added if it's a service/container (versions in lockstep with the pin)
 - [ ] `uv run -m pytest` green

@@ -1,13 +1,13 @@
 ---
 name: pre-commit-setup
-description: Stand up pre-commit in a repository with the standard hygiene hooks — trailing-whitespace, end-of-file newline, YAML/JSON/TOML checks, large-file and merge-conflict guards — then install the git hook and run it across the repo. Use when adding pre-commit to a project, asked to "set up pre-commit" or "add commit hooks", or to establish baseline formatting hygiene. Language-specific linters (ruff, pyright, etc.) are layered on top by the relevant project-setup skill.
+description: Stand up pre-commit in a repository with the standard hygiene hooks — trailing-whitespace, end-of-file newline, YAML/JSON/TOML checks, large-file and merge-conflict guards — then install the git hook and run it across the repo. Use when adding pre-commit to a project, asked to "set up pre-commit" or "add commit hooks", or to establish baseline formatting hygiene. Language-specific linters (ruff, pyrefly, etc.) are layered on top by the relevant project-setup skill.
 ---
 
 # Setting up pre-commit
 
 This skill establishes the **baseline** pre-commit config: the language-agnostic hygiene
 hooks every repo should have (end-of-line/whitespace normalization, file checks). Project-
-specific linters and formatters (e.g. ruff + pyright from the **uv-setup** skill) are
+specific linters and formatters (e.g. ruff + pyrefly from the **uv-setup** skill) are
 appended to the same `.pre-commit-config.yaml`, not configured here.
 
 ## 1. Install pre-commit
