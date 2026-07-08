@@ -9,8 +9,8 @@
     },
     {
       "title": "Agent workflow",
-      "description": "Session helpers — tracking upstream GitHub issues, PRs, and releases you're waiting on.",
-      "skills": ["watchlist"]
+      "description": "Session helpers — tracking upstream GitHub issues, PRs, and releases you're waiting on, and assigning CODEOWNERS reviewers to your GitLab MRs.",
+      "skills": ["watchlist", "assign-mr-reviewers"]
     },
     {
       "title": "Frontend",

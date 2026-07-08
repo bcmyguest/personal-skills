@@ -25,6 +25,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `uv-develop` | Day-to-day uv dependency + test workflow |
 | `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
+| `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
 | `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
@@ -75,6 +76,7 @@ skills/                          # portable agent skills — one folder per skil
   uv-develop/                SKILL.md
   pre-commit-setup/          SKILL.md
   watchlist/                 SKILL.md
+  assign-mr-reviewers/       SKILL.md + scripts/
   react-ts-setup/            SKILL.md + references/
   senior-frontend-refactor/  SKILL.md
   add-ansible-role/          SKILL.md + config.json + templates/
