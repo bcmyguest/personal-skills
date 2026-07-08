@@ -84,6 +84,8 @@ skills/                          # portable agent skills — one folder per skil
 skills.sh.json                   # skills.sh groupings for the skills above
 plugins.json                     # external marketplaces + enable list for install-plugins.sh
 install-plugins.sh               # personal-machine bootstrap (hook-bearing plugins)
+CLAUDE.md                        # global Claude Code instructions
+IDEAS.md                         # parked skill candidates and config snippets
 ```
 
 ## License
