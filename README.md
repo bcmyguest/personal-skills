@@ -30,6 +30,8 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
 | `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
 | `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
+| `fast-hypothesis` | Rapid bug diagnosis — form one hypothesis and test it before exploring further |
+| `reproduce-bug` | Debug any bug using strict reproduce-verify discipline |
 
 Layout: one folder per skill under [`skills/`](skills), each with a `SKILL.md` plus any
 resources it needs (`references/`, `templates/`, `config.json`).
@@ -46,6 +48,7 @@ Code plugins and now live in their own repos:
 |--------|------|------|
 | `assisted-by` | `git-attribution` skill **plus** a PreToolUse hook that enforces AI commit attribution on `git commit` | [bcmyguest/assisted-by](https://github.com/bcmyguest/assisted-by) |
 | `skill-inject` | Local, model-agnostic automatic skill injection | [bcmyguest/skill-injector](https://github.com/bcmyguest/skill-injector) |
+| `claude-memory` | Session conventions (MEMORY.md) plus `/install` script for `@include` injection | [bcmyguest/claude-memory](https://github.com/bcmyguest/claude-memory) |
 
 ```bash
 claude plugin marketplace add bcmyguest/assisted-by
@@ -81,6 +84,8 @@ skills/                          # portable agent skills — one folder per skil
   senior-frontend-refactor/  SKILL.md
   add-ansible-role/          SKILL.md + config.json + templates/
   debug-lemonade/            SKILL.md
+  fast-hypothesis/           SKILL.md
+  reproduce-bug/             SKILL.md
 skills.sh.json                   # skills.sh groupings for the skills above
 plugins.json                     # external marketplaces + enable list for install-plugins.sh
 install-plugins.sh               # personal-machine bootstrap (hook-bearing plugins)
