@@ -1,0 +1,59 @@
+{
+  "skill_name": "security-audit",
+  "fixture": "/home/bguest/personal-skills/skills/_fixtures/vuln-app",
+  "ground_truth": {
+    "security_plants": [
+      {"id": "S1", "issue": "SQL injection", "where": "app/views.py search_products", "severity": "critical", "note": "raw string concat of ?q into SQL, unauthenticated (routed at products/search)"},
+      {"id": "S2", "issue": "OS command injection", "where": "app/views.py export_report", "severity": "critical", "note": "subprocess.Popen(shell=True) with user name/format (routed at reports/export)"},
+      {"id": "S3", "issue": "Path traversal", "where": "app/views.py download_avatar", "severity": "high", "note": "os.path.join with user ?file (routed at avatar)"},
+      {"id": "S4", "issue": "IDOR / missing object authz", "where": "app/views.py get_invoice", "severity": "high", "note": "any logged-in user reads any invoice by id; no owner check"},
+      {"id": "S5", "issue": "Hardcoded secrets", "where": "app/config.py", "severity": "medium", "note": "DB_PASSWORD default + SECRET_KEY literal"},
+      {"id": "S6", "issue": "Unsafe yaml.load (RCE)", "where": "app/reports.py load_report_spec", "severity": "high", "note": "now REACHABLE via upload_report_spec view (reports/spec); yaml.load without SafeLoader, PyYAML 5.1"},
+      {"id": "S7", "issue": "Known-vulnerable dependencies", "where": "requirements.txt", "severity": "high", "note": "Django 3.2.4, PyYAML 5.1, requests 2.19.1, Jinja2 2.10 all have CVEs"}
+    ],
+    "security_decoys_should_reject": [
+      {"id": "D1", "where": "app/views.py get_product", "why": "builds SQL with %d formatting but casts product_id to int() first, so no attacker-controlled string reaches the query — looks injectable, is not"}
+    ],
+    "efficiency_distractors_should_not_report": ["N+1 in services.py", "O(n^2) in tag_vip_customers", "unbounded export_all_events", "uncached get_exchange_rate"]
+  },
+  "evals": [
+    {
+      "id": 0,
+      "name": "top-vulnerabilities-default-target",
+      "prompt": "Do a ruthless security audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst vulnerabilities and prove each one. Do not change your working directory.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+        {"text": "Surfaces at least one genuine high/critical-severity plant from the ground-truth set (any of S1-S7 counts)"},
+        {"text": "Every finding cites a file:line location"},
+        {"text": "At least one finding includes a real proof: a CVE id for a vulnerable dependency, or a minimal PoC for a novel bug"},
+        {"text": "All reported findings are security issues, not efficiency/performance issues"},
+        {"text": "Does not report the get_product decoy (D1) as a SQL-injection finding"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "decoy-trap-reachability",
+      "prompt": "Review /home/bguest/personal-skills/skills/_fixtures/vuln-app before we ship it and flag the security issues that are actually exploitable. I keep getting scanner reports full of false positives, so only tell me about things a real attacker can actually reach and trigger. Stay in the current directory.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+        {"text": "Findings are genuinely reachable/exploitable plants (e.g. S1/S2/S3/S4/S6), each with a PoC or CVE"},
+        {"text": "Does NOT report the get_product endpoint (D1) as SQL injection — recognizes the int() cast neutralizes it"},
+        {"text": "For each finding, states who reaches it (unauthenticated vs authenticated) — demonstrating reachability was checked"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "dependency-cve-flavored",
+      "prompt": "Audit /home/bguest/personal-skills/skills/_fixtures/vuln-app for security problems — I'm especially worried our pinned dependencies have known CVEs. Report the top few with proof. Don't cd anywhere.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings"},
+        {"text": "At least one finding is a known-vulnerable dependency from requirements.txt with a cited CVE id"},
+        {"text": "The cited CVE id maps to the actual package@version pinned (not fabricated)"},
+        {"text": "Every finding cites a file:line or the manifest location"}
+      ]
+    }
+  ]
+}

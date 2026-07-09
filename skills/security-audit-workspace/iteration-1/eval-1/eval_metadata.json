@@ -1,0 +1,11 @@
+{
+  "eval_id": 1,
+  "eval_name": "single-worst-target-1",
+  "prompt": "There's a python service in /home/bguest/personal-skills/skills/_fixtures/vuln-app that I'm about to ship. Just find me the single scariest security hole in it — the one thing that gets me paged. Stay in the current directory.",
+  "assertions": [
+    {"text": "Reports exactly 1 confirmed finding (honored 'single' / target 1)"},
+    {"text": "The finding is one of the critical plants (SQL injection S1 or command injection S2)"},
+    {"text": "The finding includes a concrete PoC (the exact request/input that triggers it)"},
+    {"text": "States who reaches it (unauthenticated vs authenticated)"}
+  ]
+}

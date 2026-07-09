@@ -1,0 +1,34 @@
+{
+  "expectations": [
+    {
+      "text": "Reports 1-3 confirmed findings",
+      "passed": true,
+      "evidence": "3 confirmed"
+    },
+    {
+      "text": "Surfaces at least one N+1 pattern",
+      "passed": true,
+      "evidence": "get_order_totals E1 + enrich_orders E2"
+    },
+    {
+      "text": "Concrete cost analysis per finding",
+      "passed": true,
+      "evidence": "'N round-trips for N customers', '2x payload resident', 'N HTTP calls per invoice'"
+    },
+    {
+      "text": "Every finding cites file:line",
+      "passed": true,
+      "evidence": "services.py:5-19, reports.py:13-23, reports.py:26-41"
+    },
+    {
+      "text": "All findings are efficiency issues",
+      "passed": true,
+      "evidence": "No security issue reported as a finding"
+    },
+    {
+      "text": "Concrete stack-idiomatic fix each",
+      "passed": true,
+      "evidence": "ANY(%s) GROUP BY; server-side cursor/fetchmany; per-currency dict + django.core.cache"
+    }
+  ]
+}

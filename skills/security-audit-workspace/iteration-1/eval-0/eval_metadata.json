@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "top-vulnerabilities-default-target",
+  "prompt": "Do a ruthless security audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst vulnerabilities and prove each one. Do not change your working directory.",
+  "assertions": [
+    {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+    {"text": "Surfaces at least one genuine high/critical-severity plant from the ground-truth set (any of S1-S7 counts)"},
+    {"text": "Every finding cites a file:line location"},
+    {"text": "At least one finding includes a real proof: a CVE id for a vulnerable dependency, or a minimal PoC for a novel bug"},
+    {"text": "All reported findings are security issues, not efficiency/performance issues"},
+    {"text": "Does not pad with low-severity style nits beyond the target"}
+  ]
+}

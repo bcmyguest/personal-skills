@@ -1,0 +1,34 @@
+{
+  "expectations": [
+    {
+      "text": "Reports 1-3 confirmed findings",
+      "passed": false,
+      "evidence": "Reports 8 findings \u2014 ignores the stop-early cap"
+    },
+    {
+      "text": "Surfaces a genuine high/critical plant",
+      "passed": true,
+      "evidence": "SQLi (Critical) + command injection (Critical)"
+    },
+    {
+      "text": "Every finding cites file:line",
+      "passed": true,
+      "evidence": "views.py:20, :44-45, :52-55, :26-35, config.py:13,16, reports.py:10, requirements.txt, config.py:4"
+    },
+    {
+      "text": "At least one real proof (CVE or PoC)",
+      "passed": true,
+      "evidence": "PoCs for SQLi/cmd-inj/traversal; CVE ids for deps (CVE-2018-18074, CVE-2019-10906, CVE-2022-28346)"
+    },
+    {
+      "text": "All findings are security issues",
+      "passed": true,
+      "evidence": "Explicitly excludes services.py N+1 as 'efficiency, not security'"
+    },
+    {
+      "text": "No padding beyond target",
+      "passed": false,
+      "evidence": "8 findings incl. Low-Medium 'DEBUG from env' nit \u2014 padded well past a top-N"
+    }
+  ]
+}

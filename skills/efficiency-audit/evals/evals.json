@@ -1,0 +1,57 @@
+{
+  "skill_name": "efficiency-audit",
+  "fixture": "/home/bguest/personal-skills/skills/_fixtures/vuln-app",
+  "ground_truth": {
+    "efficiency_plants": [
+      {"id": "E1", "issue": "N+1 query", "where": "app/services.py get_order_totals", "severity": "high", "note": "one SUM query per customer; now REACHABLE via account_dashboard view (dashboard route)"},
+      {"id": "E2", "issue": "N+1 query", "where": "app/services.py enrich_orders", "severity": "high", "note": "one customer lookup per order; reachable via account_dashboard"},
+      {"id": "E3", "issue": "O(n^2) membership scan", "where": "app/services.py tag_vip_customers", "severity": "medium", "note": "c['id'] in vip_ids (list) per customer; reachable via account_dashboard"},
+      {"id": "E4", "issue": "Unbounded in-memory load", "where": "app/reports.py export_all_events", "severity": "high", "note": "loads entire ever-growing events table; reachable via events_export view (events/export route)"},
+      {"id": "E5", "issue": "Uncached external call in loop", "where": "app/reports.py render_invoice_lines/get_exchange_rate", "severity": "high", "note": "HTTP FX call per line item; reachable via invoice_lines view (invoices/lines route)"}
+    ],
+    "efficiency_decoys_should_reject": [
+      {"id": "D2", "where": "app/reports.py warm_rate_cache", "why": "loops over the fixed 3-element SUPPORTED_CURRENCIES tuple — exactly 3 calls regardless of data/traffic, so its cost does not scale; looks like an N-fetch loop, is not"}
+    ],
+    "security_distractors_should_not_report": ["SQL injection", "command injection", "path traversal", "IDOR", "hardcoded secrets", "unsafe yaml.load", "vulnerable dependencies"]
+  },
+  "evals": [
+    {
+      "id": 0,
+      "name": "top-bottlenecks-default-target",
+      "prompt": "Do a ruthless efficiency audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst performance/cost problems and quantify each. Do not change your working directory.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+        {"text": "Surfaces at least one N+1 query pattern (get_order_totals E1 or enrich_orders E2)"},
+        {"text": "Every finding includes a concrete cost analysis (complexity class or query count as a function of N), not just 'this is slow'"},
+        {"text": "Every finding cites a file:line location"},
+        {"text": "All reported findings are efficiency/performance issues, not security vulnerabilities"},
+        {"text": "Does not report the warm_rate_cache decoy (D2), whose cost is fixed at 3 and does not scale"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "cost-scale-trap",
+      "prompt": "Something in /home/bguest/personal-skills/skills/_fixtures/vuln-app is going to fall over as we grow. Find the paths whose cost actually scales with our data or traffic — I don't care about micro-optimizations or things that are bounded, just the ones that blow up as the numbers get big. Stay in the current directory.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+        {"text": "Findings are genuinely scaling hot paths (N+1 E1/E2, unbounded load E4, or per-item HTTP E5)"},
+        {"text": "Does NOT report the warm_rate_cache loop (D2) — recognizes its cost is bounded at 3 and cannot scale"},
+        {"text": "Each finding quantifies how cost grows with N (queries, memory, or HTTP calls as a function of data/traffic)"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "with-sentry-signal",
+      "prompt": "Efficiency-audit /home/bguest/personal-skills/skills/_fixtures/vuln-app. Our Sentry shows the /events/export and /invoices/lines transactions dominating total time (see https://ghgsat.sentry.io/performance/). Find the top offenders behind that. Don't cd anywhere.",
+      "files": [],
+      "assertions": [
+        {"text": "Reports between 1 and 3 confirmed findings"},
+        {"text": "Findings concentrate on the events-export / invoice-render hot paths flagged by Sentry (export_all_events E4 or the uncached FX call E5)"},
+        {"text": "Acknowledges the Sentry signal (uses it to prioritize, or notes it could not fetch it) rather than ignoring it"},
+        {"text": "Every finding includes a concrete cost analysis and a fix"}
+      ]
+    }
+  ]
+}

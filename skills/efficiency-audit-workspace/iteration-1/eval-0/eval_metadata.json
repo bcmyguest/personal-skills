@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "top-bottlenecks-default-target",
+  "prompt": "Do a ruthless efficiency audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst performance/cost problems and quantify each. Do not change your working directory.",
+  "assertions": [
+    {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
+    {"text": "Surfaces at least one N+1 query pattern (get_order_totals E1 or enrich_orders E2)"},
+    {"text": "Every finding includes a concrete cost analysis (complexity class or query count as a function of N), not just 'this is slow'"},
+    {"text": "Every finding cites a file:line location"},
+    {"text": "All reported findings are efficiency/performance issues, not security vulnerabilities"},
+    {"text": "Each finding proposes a concrete, stack-idiomatic fix"}
+  ]
+}

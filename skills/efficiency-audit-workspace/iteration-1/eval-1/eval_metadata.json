@@ -1,0 +1,11 @@
+{
+  "eval_id": 1,
+  "eval_name": "why-is-this-slow-target-1",
+  "prompt": "The customer dashboard backed by /home/bguest/personal-skills/skills/_fixtures/vuln-app is really slow under load. Just find me the single biggest bottleneck. Stay in the current directory.",
+  "assertions": [
+    {"text": "Reports exactly 1 confirmed finding (honored 'single' / target 1)"},
+    {"text": "The finding is a high-impact scaling issue (an N+1 or the uncached per-item HTTP call), not a micro-optimization"},
+    {"text": "Quantifies the cost concretely (e.g. 1+N queries, or N HTTP calls per request)"},
+    {"text": "Does not report a security issue as the bottleneck"}
+  ]
+}

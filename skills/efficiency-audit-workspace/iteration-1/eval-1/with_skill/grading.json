@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Reports exactly 1 confirmed finding",
+      "passed": true,
+      "evidence": "1 crown: search_products full scan"
+    },
+    {
+      "text": "High-impact scaling issue, not micro-opt",
+      "passed": true,
+      "evidence": "Full table scan + unbounded fetch + single-connection serialization"
+    },
+    {
+      "text": "Quantifies cost concretely",
+      "passed": true,
+      "evidence": "O(N) full scan + O(M) uncapped payload; C requests serialize on one _conn"
+    },
+    {
+      "text": "Does not report a security issue as bottleneck",
+      "passed": true,
+      "evidence": "Framed purely as performance/load; SQLi not raised as the finding"
+    }
+  ]
+}

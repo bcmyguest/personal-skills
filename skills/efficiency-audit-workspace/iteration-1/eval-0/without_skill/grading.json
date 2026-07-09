@@ -1,0 +1,34 @@
+{
+  "expectations": [
+    {
+      "text": "Reports 1-3 confirmed findings",
+      "passed": false,
+      "evidence": "Reports 8 findings \u2014 ignores stop-early cap"
+    },
+    {
+      "text": "Surfaces at least one N+1 pattern",
+      "passed": true,
+      "evidence": "get_order_totals + enrich_orders"
+    },
+    {
+      "text": "Concrete cost analysis per finding",
+      "passed": true,
+      "evidence": "quantified per item"
+    },
+    {
+      "text": "Every finding cites file:line",
+      "passed": true,
+      "evidence": "all cited"
+    },
+    {
+      "text": "All findings are efficiency issues",
+      "passed": false,
+      "evidence": "Flags SQLi and shell injection (security) within the efficiency audit"
+    },
+    {
+      "text": "Concrete stack-idiomatic fix each",
+      "passed": true,
+      "evidence": "fixes given"
+    }
+  ]
+}

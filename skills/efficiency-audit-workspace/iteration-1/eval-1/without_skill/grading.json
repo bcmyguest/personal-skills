@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Reports exactly 1 confirmed finding",
+      "passed": true,
+      "evidence": "Crowns N+1 in get_order_totals as biggest, others secondary"
+    },
+    {
+      "text": "High-impact scaling issue, not micro-opt",
+      "passed": true,
+      "evidence": "N+1 O(n) round-trips per dashboard load"
+    },
+    {
+      "text": "Quantifies cost concretely",
+      "passed": true,
+      "evidence": "~300 round-trips per load, ~3s latency"
+    },
+    {
+      "text": "Does not report a security issue as bottleneck",
+      "passed": true,
+      "evidence": "Bottleneck is the N+1; no security issue crowned"
+    }
+  ]
+}
