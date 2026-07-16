@@ -41,7 +41,7 @@ These have been created as executable skills.
 
 ### fast-hypothesis ✅
 
-**Location**: `claude-memory/skills/fast-hypothesis/SKILL.md`
+**Location**: [`skills/fast-hypothesis/SKILL.md`](skills/fast-hypothesis/SKILL.md)
 
 **Description**: Rapid bug diagnosis—form one hypothesis and test it before exploring further
 
@@ -51,7 +51,7 @@ Pairs with MEMORY.md Debugging Workflow rule.
 
 ### reproduce-bug ✅
 
-**Location**: `claude-memory/skills/reproduce-bug/SKILL.md`
+**Location**: [`skills/reproduce-bug/SKILL.md`](skills/reproduce-bug/SKILL.md)
 
 **Description**: Debug any bug using strict reproduce-verify discipline
 

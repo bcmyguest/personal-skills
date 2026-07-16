@@ -1,6 +1,6 @@
 {
   "skill_name": "efficiency-audit",
-  "fixture": "/home/bguest/personal-skills/skills/_fixtures/vuln-app",
+  "fixture": "skills/_fixtures/vuln-app",
   "ground_truth": {
     "efficiency_plants": [
       {"id": "E1", "issue": "N+1 query", "where": "app/services.py get_order_totals", "severity": "high", "note": "one SUM query per customer; now REACHABLE via account_dashboard view (dashboard route)"},
@@ -18,7 +18,7 @@
     {
       "id": 0,
       "name": "top-bottlenecks-default-target",
-      "prompt": "Do a ruthless efficiency audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst performance/cost problems and quantify each. Do not change your working directory.",
+      "prompt": "Do a ruthless efficiency audit of the Django app at skills/_fixtures/vuln-app. Find the worst performance/cost problems and quantify each. Do not change your working directory.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
@@ -32,7 +32,7 @@
     {
       "id": 1,
       "name": "cost-scale-trap",
-      "prompt": "Something in /home/bguest/personal-skills/skills/_fixtures/vuln-app is going to fall over as we grow. Find the paths whose cost actually scales with our data or traffic — I don't care about micro-optimizations or things that are bounded, just the ones that blow up as the numbers get big. Stay in the current directory.",
+      "prompt": "Something in skills/_fixtures/vuln-app is going to fall over as we grow. Find the paths whose cost actually scales with our data or traffic — I don't care about micro-optimizations or things that are bounded, just the ones that blow up as the numbers get big. Stay in the current directory.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
@@ -44,7 +44,7 @@
     {
       "id": 2,
       "name": "with-sentry-signal",
-      "prompt": "Efficiency-audit /home/bguest/personal-skills/skills/_fixtures/vuln-app. Our Sentry shows the /events/export and /invoices/lines transactions dominating total time (see https://ghgsat.sentry.io/performance/). Find the top offenders behind that. Don't cd anywhere.",
+      "prompt": "Efficiency-audit skills/_fixtures/vuln-app. Our Sentry shows the /events/export and /invoices/lines transactions dominating total time (see https://ghgsat.sentry.io/performance/). Find the top offenders behind that. Don't cd anywhere.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings"},

@@ -1,6 +1,6 @@
 ---
 name: reproduce-bug
-description: Debug any bug using strict reproduce-verify discipline
+description: Debug any bug using strict reproduce-verify discipline — reproduce the exact failure first, test one hypothesis at a time, and never claim a fix without re-running the original failing case. Use when the user invokes /reproduce-bug, asks to fix a bug properly, or when a fix must be proven against the original failure; for a fast first-pass diagnosis without a fix loop, use fast-hypothesis instead.
 ---
 
 # Reproduce & Verify Bug Diagnosis

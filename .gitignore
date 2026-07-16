@@ -4,3 +4,6 @@ __pycache__/
 node_modules/
 .fastembed_cache/
 .opencode/
+# generated eval-run outputs (skill benchmarking workspaces)
+skills/*-workspace/
+skills/_fixtures/run_map.json

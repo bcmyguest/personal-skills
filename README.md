@@ -34,6 +34,8 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
 | `fast-hypothesis` | Rapid bug diagnosis — form one hypothesis and test it before exploring further |
 | `reproduce-bug` | Debug any bug using strict reproduce-verify discipline |
+| `security-audit` | Find and adversarially verify a codebase's 1–3 worst security vulnerabilities (capped Sonnet multi-agent workflow) |
+| `efficiency-audit` | Find and verify a codebase's 1–3 worst efficiency problems with concrete cost analyses (capped Sonnet multi-agent workflow) |
 
 Layout: one folder per skill under [`skills/`](skills), each with a `SKILL.md` plus any
 resources it needs (`references/`, `templates/`, `config.json`).
@@ -90,6 +92,9 @@ skills/                          # portable agent skills — one folder per skil
   debug-lemonade/            SKILL.md
   fast-hypothesis/           SKILL.md
   reproduce-bug/             SKILL.md
+  security-audit/            SKILL.md + scripts/ + evals/
+  efficiency-audit/          SKILL.md + scripts/ + evals/
+  _fixtures/                 shared eval fixture (vuln-app) for the audit skills
 skills.sh.json                   # skills.sh groupings for the skills above
 plugins.json                     # external marketplaces + enable list for install-plugins.sh
 install-plugins.sh               # personal-machine bootstrap (hook-bearing plugins)

@@ -28,6 +28,16 @@
       "skills": ["react-ts-setup", "senior-frontend-refactor"]
     },
     {
+      "title": "Audits",
+      "description": "Ruthless top-N codebase audits — find and verify the 1-3 worst security vulnerabilities or efficiency problems via a capped multi-agent Sonnet workflow.",
+      "skills": ["security-audit", "efficiency-audit"]
+    },
+    {
+      "title": "Debugging",
+      "description": "Debugging discipline — hypothesis-first rapid diagnosis, and strict reproduce-verify workflow for any bug.",
+      "skills": ["fast-hypothesis", "reproduce-bug"]
+    },
+    {
       "title": "Ops",
       "description": "Personal infra helpers — scaffold Ansible roles and diagnose lemonade-server.",
       "skills": ["add-ansible-role", "debug-lemonade"]
