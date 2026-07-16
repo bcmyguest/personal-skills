@@ -1,0 +1,21 @@
+# Automated dependency updates. Cargo minor/patch bumps arrive grouped as one
+# weekly PR (CI must pass before merging — the workflows run `--locked`, so a
+# lockfile bump that breaks the build fails visibly). GitHub Actions bumps are
+# grouped the same way.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

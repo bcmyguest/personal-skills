@@ -1,0 +1,165 @@
+name: release
+
+# Every merge to main cuts a release: the plan job asks git-cliff for the
+# next semver from the conventional commits since the last tag and runs the
+# test suite; the build matrix produces a static binary per supported target;
+# the release job pushes the vX.Y.Z tag and publishes a GitHub release with
+# git-cliff release notes and every binary attached. If nothing releasable
+# landed (only unconventional or chore(release) commits), the bumped version
+# equals the latest tag and the run exits early.
+#
+# The crate version in Cargo.toml stays at its committed value; the binary is
+# stamped with the tag version at build time so `{{crate_name}} --version`
+# reports the released version.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Decides whether this run releases, tests the code, and renders the
+  # release notes the release job attaches later.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      release: ${{ steps.bump.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Compute version
+        id: bump
+        run: |
+          latest="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          next="$(git cliff --bumped-version)"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          if [ "$next" = "$latest" ]; then
+            echo "Nothing to release: bumped version $next equals the latest tag."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $next (previous: ${latest:-none})."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.bump.outputs.release == 'true'
+        run: cargo test --locked
+
+      - name: Render release notes
+        if: steps.bump.outputs.release == 'true'
+        run: |
+          git cliff --unreleased --tag "${{ steps.bump.outputs.version }}" -o release-notes.md
+          cat release-notes.md
+
+      - name: Upload release notes
+        if: steps.bump.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  # One static binary per supported target. Linux builds run natively on
+  # x64/arm64 runners against musl; both macOS targets build on the arm64
+  # runner (the Apple toolchain cross-compiles x86_64 with just the added
+  # rust target).
+  build:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # Windows needs a .exe suffix in the copy step below — adapt
+          # before uncommenting.
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # perl, not sed -i: the in-place flag differs between GNU and BSD sed
+      # and this step runs on both Linux and macOS.
+      - name: Stamp crate version
+        run: |
+          version="${{ needs.plan.outputs.version }}"
+          perl -pi -e "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build static binary
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p release
+          cp "target/${{ matrix.target }}/release/{{crate_name}}" \
+            "release/{{crate_name}}-${{ matrix.target }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error
+
+  # Tags and publishes the GitHub release with every binary attached.
+  release:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: release
+          merge-multiple: true
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          ls -l
+
+      - name: Push tag
+        run: |
+          git tag "${{ needs.plan.outputs.version }}"
+          git push origin "${{ needs.plan.outputs.version }}"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.plan.outputs.version }}
+          body_path: release-notes.md
+          files: release/*

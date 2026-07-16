@@ -27,6 +27,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
+| `rust-setup` | Scaffold a Rust repo from shipped templates — CI, auto-releases, crates.io Trusted Publishing |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
 | `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
 | `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
@@ -81,6 +82,7 @@ skills/                          # portable agent skills — one folder per skil
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
   react-ts-setup/            SKILL.md + references/
+  rust-setup/                SKILL.md + templates/
   senior-frontend-refactor/  SKILL.md
   add-ansible-role/          SKILL.md + config.json + templates/
   debug-lemonade/            SKILL.md

@@ -13,6 +13,11 @@
       "skills": ["watchlist", "assign-mr-reviewers"]
     },
     {
+      "title": "Rust",
+      "description": "Scaffold a Rust repo from shipped templates — CI, pre-commit + Conventional Commits, Dependabot, git-cliff auto-releases, and crates.io Trusted Publishing.",
+      "skills": ["rust-setup"]
+    },
+    {
       "title": "Frontend",
       "description": "Scaffold a React + TypeScript repo with Vite, and refactor existing frontend code as a senior engineer.",
       "skills": ["react-ts-setup", "senior-frontend-refactor"]

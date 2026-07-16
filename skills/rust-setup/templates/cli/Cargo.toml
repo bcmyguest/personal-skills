@@ -1,0 +1,31 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2024"
+description = "{{description}}"
+license = "{{license}}"
+readme = "README.md"
+repository = "https://github.com/{{repo_slug}}"
+homepage = "https://github.com/{{repo_slug}}"
+documentation = "https://github.com/{{repo_slug}}#readme"
+keywords = []     # fill in — max 5, shown on crates.io search
+categories = []   # fill in from https://crates.io/categories
+exclude = [".github/", ".pre-commit-config.yaml", "cliff.toml"]
+
+# Logic lives in the library (testable without a terminal); main.rs is only
+# the I/O shim around it.
+[lib]
+name = "{{crate_snake}}"
+path = "src/lib.rs"
+
+[[bin]]
+name = "{{crate_name}}"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+strip = true
+lto = true
