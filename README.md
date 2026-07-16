@@ -22,7 +22,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | Skill | What |
 |-------|------|
 | `uv-setup` | Scaffold a Python repo with uv from shipped templates — CI, auto-releases, PyPI Trusted Publishing |
-| `uv-develop` | Day-to-day uv dependency + test workflow |
+| `uv-develop` | Corrective uv operations — targeted upgrades, `--locked` vs `--frozen`, venv repair |
 | `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |

@@ -4,7 +4,7 @@
   "groupings": [
     {
       "title": "Python",
-      "description": "Python project tooling with uv — scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), day-to-day development, and pre-commit hygiene.",
+      "description": "Python project tooling with uv — scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.",
       "skills": ["uv-setup", "uv-develop", "pre-commit-setup"]
     },
     {
