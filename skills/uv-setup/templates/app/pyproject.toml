@@ -1,0 +1,37 @@
+[project]
+name = "{{project_name}}"
+version = "0.1.0"  # never hand-bumped: release.yml stamps the tag version at build time
+description = "{{description}}"
+readme = "README.md"
+license = "{{license}}"
+requires-python = ">={{python_version}}"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/{{repo_slug}}"
+
+# The console entry point — `uv run {{project_name}}` locally, the installed
+# command after `uv tool install`, and the Dockerfile CMD for services.
+# (The key stays quoted after substitution — kebab-case needs it in TOML.)
+[project.scripts]
+"{{project_name}}" = "{{package_snake}}:main"
+
+# hatchling instead of uv init's generated uv_build block: hatchling is safe
+# to leave unversioned (so this template hardcodes no version window, unlike
+# uv_build's `>=X,<Y`) and auto-detects the src/ layout.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Build + install the project into the venv — what makes the entry point and
+# `import {{package_snake}}` work from tests and a clean install.
+[tool.uv]
+package = true
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+# Keep in lockstep with .python-version and requires-python — bump together.
+python-version = "{{python_version}}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

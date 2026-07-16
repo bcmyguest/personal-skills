@@ -4,13 +4,23 @@
   "groupings": [
     {
       "title": "Python",
-      "description": "Python project tooling with uv — scaffold a project, day-to-day development, and pre-commit hygiene.",
+      "description": "Python project tooling with uv — scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.",
       "skills": ["uv-setup", "uv-develop", "pre-commit-setup"]
     },
     {
       "title": "Agent workflow",
       "description": "Session helpers — tracking upstream GitHub issues, PRs, and releases you're waiting on, and assigning CODEOWNERS reviewers to your GitLab MRs.",
       "skills": ["watchlist", "assign-mr-reviewers"]
+    },
+    {
+      "title": "Rust",
+      "description": "Scaffold a Rust repo from shipped templates — CI, pre-commit + Conventional Commits, Dependabot, git-cliff auto-releases, and crates.io Trusted Publishing.",
+      "skills": ["rust-setup"]
+    },
+    {
+      "title": "Release automation",
+      "description": "Automated releases from Conventional Commits with git-cliff — GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).",
+      "skills": ["release-setup"]
     },
     {
       "title": "Frontend",

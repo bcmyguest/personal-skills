@@ -1,290 +1,213 @@
 ---
 name: uv-setup
-description: Bootstrap a new Python project with uv the right way — asks the project type up front, then uv init, packaged layout, pinned Python version, a type checker (pyrefly by default), ruff + pyrefly pre-commit hooks, run/build/validate docs, and a multi-stage Dockerfile for services. Use when starting a new Python project, scaffolding a repo, or asked to "set up" or "initialize" a Python project. For day-to-day work in an existing project, use uv-develop instead.
+description: Scaffold a new Python project with uv by copying shipped template files — uv init --package, then overlay templates for ruff + pyrefly (local hook) pre-commit, Conventional Commits, CI entirely through uv, Dependabot (uv + actions), git-cliff auto-release on merge, PyPI Trusted Publishing (pending publisher, never a token), and a multi-stage Dockerfile for services. Use when starting a new Python project, scaffolding a repo, or asked to "set up" or "initialize" a Python project. For day-to-day work in an existing project, use uv-develop instead.
 ---
 
-# Setting up a uv project
+# Scaffolding a uv project
 
-Scaffold every new Python project with `uv`. Work top to bottom; confirm choices with
-the user where noted. After setup, day-to-day work follows the **uv-develop** skill, and
-the pre-commit baseline comes from the **pre-commit-setup** skill.
+Everything ships as **real files under [`templates/`](templates/)** — copy
+them verbatim, run one substitution pass, make the few marked edits. Do
+**not** retype configs from memory or improvise structure: the templates are
+the source of truth, and the decisions below only change *which* files get
+copied. `uv init` still runs first — uv owns the generated things (git repo,
+`src/` dir, `uv.lock`, dev-dep versions); the templates overlay everything
+opinionated on top.
 
-**Steps:** (0) ask project type → (1) `uv init --package` → (2) confirm packaging →
-(3) pin Python → (4) type checker (pyrefly) → (5) ruff + pyrefly pre-commit hooks →
-(6) document run/build/validate → (7) Dockerfile if it's a service. Steps 6–7 are
-conditional on the project type from step 0.
+What the result looks like: a packaged `src/` layout with a tested
+hello-world mock, CI running lint + format + types + tests all through uv,
+hygiene + Conventional Commits enforced at commit time, Dependabot keeping
+uv.lock and actions current, and — if chosen — every merge to `main`
+auto-releasing via git-cliff, with PyPI uploads via Trusted Publishing only.
+Day-to-day work afterwards follows the **uv-develop** skill.
 
-## 0. Ask the user what kind of project this is
+## 0. Ask the decisions
 
-Do this **before scaffolding** — the answer changes packaging, the build step, and
-whether to containerize. Don't assume; ask:
+| Decision             | Options                                              | Default        |
+| -------------------- | ---------------------------------------------------- | -------------- |
+| Project name         | kebab-case; must be free on PyPI if publishing       | ask            |
+| GitHub repo slug     | `owner/repo`                                         | ask            |
+| One-line description | —                                                    | ask            |
+| Project type         | library · application/CLI · service · script         | ask            |
+| Python version       | recent stable (avoid pre-releases)                   | **3.13**       |
+| License              | SPDX expression (`MIT`, `Apache-2.0`, …)             | **MIT**        |
+| Release automation   | auto-release every merge to `main` · none            | **auto-release** |
+| Publish to PyPI      | yes (**Trusted Publishing only**) · no               | libraries: ask; others: usually no |
 
-- **Library / package** (imported by others, published to an index) → packaged,
-  `uv build` matters, validate the wheel, usually no Dockerfile.
-- **Application / CLI** (run directly, not published) → packaged for a clean entry point,
-  no wheel publishing, Dockerfile optional.
-- **Service** (web/API/long-running, deployed as a container) → packaged **and**
-  containerized (step 7).
-- **Script / throwaway** (one-off, not importable) → the only case for a bare,
-  non-packaged `uv init`.
+**Script / throwaway** (one-off, not importable) is the only non-templated
+case: bare `uv init` (no `--package`), none of this skill applies — stop here.
 
-Also confirm the **Python version** (step 3) and **type checker** (step 4) while you're
-asking. Use the answers to decide which of the steps below apply.
-
-## 1. Quickstart with `uv init`
-
-Follow the uv quickstart (<https://docs.astral.sh/uv/guides/projects/>). Create the
-project as a **packaged** project unless the user clearly wants a throwaway script:
+## 1. Generate, then copy the templates
 
 ```bash
-uv init --package <project-name>      # packaged app / library (the usual choice)
-# uv init <project-name>              # bare, non-packaged — only for scripts/experiments
+uv init --package <project-name> && cd <project-name>
 ```
 
-`uv init --package` produces a `src/` layout, a `[project]` table with a `[build-system]`,
-and a `[project.scripts]` entry point — the correct base for anything that will be
-imported, tested, or distributed. Then create the environment:
+`$SKILL` below is this skill's directory; `<pkg>` is the package dir uv
+created under `src/` (project name with `-` → `_`). Later copies overlay
+earlier ones — the template pyproject.toml, README.md, and .gitignore
+*replace* the generated ones on purpose.
 
 ```bash
-cd <project-name>
+# Always — the base layer (note the /. so dotfiles come along):
+cp -R "$SKILL/templates/base/." .
+cp -R "$SKILL/templates/package/." "src/<pkg>/"   # mock module + py.typed
+
+# Project type — run exactly ONE of the following:
+cp "$SKILL/templates/lib/pyproject.toml" .        # library (no console script)
+# …or, for an application/CLI or service:
+# cp "$SKILL/templates/app/pyproject.toml" .      # application/CLI AND service
+
+# Service only — in addition to app/pyproject.toml:
+cp "$SKILL/templates/service/Dockerfile" "$SKILL/templates/service/.dockerignore" .
+
+# Release automation (skip both lines entirely if "none"; $RS = the
+# installed release-setup skill, a sibling of $SKILL — it owns the canonical
+# cliff.toml and the release doctrine):
+cp "$RS/templates/cliff.toml" .
+cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
+
+# Pre-commit — assembled from the pre-commit-setup skill's shared fragments
+# plus this skill's Python layer ($PCS = the installed pre-commit-setup
+# skill, a sibling of $SKILL; drop the conventional-commits line if
+# releases: none):
+{ echo 'repos:'; cat "$PCS/templates/hygiene.repos.yaml" \
+    "$PCS/templates/conventional-commits.repos.yaml" \
+    "$SKILL/templates/pre-commit-python.repos.yaml"; } > .pre-commit-config.yaml
+```
+
+The pre-commit machinery (install, hook types, merge-into-existing) is the
+**pre-commit-setup** skill's job — follow it with the assembled config, and
+the release doctrine (commit types → semver, notes, no hand-bumped versions)
+is the **release-setup** skill's. If either isn't installed alongside this
+one, fetch the missing files from the same repo this skill came from.
+
+Release variants — pick one: `release-pypi.yml` if publishing to PyPI
+(tag + GitHub release + OIDC upload), else `release-github.yml` (tag +
+GitHub release only).
+
+## 2. Fill the placeholders
+
+Six placeholders, one pass (adjust values; `{{package_snake}}` = project
+name with `-` → `_`):
+
+```bash
+grep -rlF '{{' --exclude-dir=.venv --exclude-dir=.git . | xargs sed -i \
+  -e 's/{{project_name}}/my-tool/g' \
+  -e 's/{{package_snake}}/my_tool/g' \
+  -e 's|{{repo_slug}}|owner/my-tool|g' \
+  -e 's/{{description}}/One-line description/g' \
+  -e 's|{{license}}|MIT|g' \
+  -e 's/{{python_version}}/3.13/g'
+```
+
+(macOS/BSD sed: `sed -i ''`.) Afterwards `grep -rF '{{' .` must only hit
+GitHub-Actions `${{ … }}` expressions and cliff.toml's Tera template.
+
+## 3. Pin Python, add the dev toolchain, lock
+
+Do this **after** the placeholder pass (uv can't parse a pyproject with
+`{{…}}` in it). Versions come from today, never from templates:
+
+```bash
+uv python pin 3.13                            # writes .python-version — commit it
+uv add --dev pytest ruff pyrefly pre-commit   # scaffold-time versions into uv.lock
 uv sync
 ```
 
-## 2. Confirm the project is packaged correctly
+Keep `.python-version`, `requires-python`, `tool.pyrefly.python-version` —
+and for services both Dockerfile `FROM` lines — on the **same** version;
+bump them together (the Dockerfile explains why the venv breaks otherwise).
 
-In `pyproject.toml`, **`tool.uv.package = true` should be set for almost every project**
-(libraries, CLIs, anything importable or testable from a clean install). Leave it unset
-or `false` only for a genuinely non-importable script collection.
+## 4. LICENSE and marked edits
 
-Verify:
-
-- A `[build-system]` table exists (uv defaults to `hatchling`).
-- Source lives under `src/<package>/` with an `__init__.py`.
-- `[project]` has `name`, `version`, `description`, `requires-python`, and `readme`.
-
-```toml
-[tool.uv]
-package = true
-```
-
-## 3. Pin the Python version
-
-Pin to a recent **stable** Python so contributors and CI all match. As of 2026 a safe
-default is **3.13** (3.14 is fine if the user wants the newest; avoid pre-releases).
-Confirm the version with the user, then:
+- Write the `LICENSE` file for the chosen SPDX expression (canonical text,
+  copyright line = current year + author).
+- Work through every `<!-- DELETE … -->` / `<!-- KEEP … -->` marker in
+  `README.md` and `CLAUDE.md` — they mark the branch-dependent blocks
+  (badges, install methods, Build & validate, Releases wording).
+- Verify the three `.gitignore` invariants survived (the shipped file
+  documents them: `.python-version` committed; `.venv/` and `__pycache__/`
+  ignored at any depth, no leading slash):
 
 ```bash
-uv python pin 3.13          # writes .python-version
+git check-ignore -v .python-version    # expect NO match (exit 1) — it's committed
+git check-ignore .venv a/b/.venv a/__pycache__/x.pyc   # expect all three printed
 ```
 
-Keep `requires-python` in `pyproject.toml` consistent with the pin, e.g.
-`requires-python = ">=3.13"`. Commit `.python-version`.
+## 5. Refresh the moving parts — don't trust shipped pins
 
-### Verify `.gitignore` does the right thing
+- `uv run pre-commit autoupdate --freeze` — the **pre-commit-setup** skill
+  owns the hook-update / supply-chain policy (immutable SHAs, never plain
+  `autoupdate`) as well as the hygiene + conventional-commits fragments the
+  config was assembled from; follow its step 4.
+- Check the `uses:` pins in the copied workflows against upstream latest
+  (`setup-uv` publishes no moving major tags since v8 — pin full versions).
+  After the first push, **Dependabot owns this** (`.github/dependabot.yml`
+  covers the `uv` ecosystem — pyproject.toml + uv.lock — and
+  `github-actions`, weekly, grouped).
 
-`uv init` writes a `.gitignore`, but confirm these three invariants — they're easy to
-break and silently wrong:
-
-- **`.python-version` is NOT ignored.** It must be committed so contributors and CI pin
-  the same interpreter. A bare-name pattern with no slash (e.g. a stray `.python-version`
-  or an over-broad `*.version`-style rule) would swallow it — make sure none does.
-- **`.venv` IS ignored, no matter how nested.** A pattern with no leading slash
-  (`.venv/`) already matches at every depth (`.venv/`, `pkg/.venv/`, `a/b/.venv/`). Don't
-  anchor it with a leading slash (`/.venv`), which would only ignore the top-level one.
-- **`__pycache__` IS ignored at any depth** — same reasoning: `__pycache__/` (no leading
-  slash) matches nested caches too.
-
-Verify with `git check-ignore` (exit `1`/no output = not ignored):
+## 6. Verify green, then first commit
 
 ```bash
-git check-ignore -v .python-version          # expect: no match (exit 1) — it's committed
-git check-ignore .venv a/b/.venv             # expect: both printed — ignored at any depth
-git check-ignore a/__pycache__/x.pyc         # expect: printed — ignored at any depth
-```
-
-If `git check-ignore .python-version` prints a match, find the offending rule (the `-v`
-flag shows which file/line) and remove or tighten it.
-
-## 4. Set up a type checker (pyrefly by default)
-
-Default to **pyrefly**. Ask the user if they prefer another checker (e.g. mypy, ty, pyright);
-otherwise use pyrefly.
-
-```bash
-uv add --dev pyrefly
-```
-
-Add a config block to `pyproject.toml` and verify it runs clean. Keys are hyphenated;
-set `python-version` to the version you pinned in `.python-version`:
-
-```toml
-[tool.pyrefly]
-project-includes = ["src", "tests"]
-python-version = "3.13"   # match the version pinned in step 3 / .python-version
-# tighten individual diagnostics here if the user wants stricter checking:
-# [tool.pyrefly.errors]
-# bad-assignment = true
-```
-
-```bash
+uv run ruff check && uv run ruff format --check
 uv run pyrefly check
-```
-
-Add pytest as the test runner while you're installing dev tooling — the README run/validate
-commands (step 6) and the final checklist assume it's present:
-
-```bash
-uv add --dev pytest
-```
-
-## 5. Add ruff + pyrefly pre-commit hooks
-
-Add the linters as dev deps and wire up pre-commit:
-
-```bash
-uv add --dev ruff pre-commit
-```
-
-ruff runs from its official mirror, pinned to a tagged `rev` (check the latest release
-rather than guessing). pyrefly runs as a **local** hook via `uv run` so it executes the
-project's own dev-dep pyrefly inside the project venv — this is what lets it resolve
-third-party imports. The published `facebook/pyrefly-pre-commit` hook installs pyrefly in
-an isolated env *without* your dependencies, so it falsely reports `missing-import` for
-every third-party package; don't use it for a uv project.
-
-`.pre-commit-config.yaml`:
-
-```yaml
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.x.x            # use the latest tagged release
-    hooks:
-      - id: ruff-check     # lint
-        args: [--fix]
-      - id: ruff-format    # format
-  - repo: local
-    hooks:
-      - id: pyrefly
-        name: pyrefly
-        entry: uv run pyrefly check
-        language: system
-        types_or: [python, pyi]
-        pass_filenames: false   # pyrefly checks the whole project, not single files
-        require_serial: true
-```
-
-This skill covers the project-specific linting hooks. For the standard hygiene hooks
-(trailing whitespace, end-of-file newline, YAML checks, etc.) and installing the git hook,
-use the **pre-commit-setup** skill. Finish with:
-
-```bash
-uv run pre-commit install
+uv run -m pytest
+uv run pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg
 uv run pre-commit run --all-files
+git add -A && git commit -m "feat: scaffold <project-name>"
 ```
 
-## 6. Document run / build / validate
-
-Add a README section so anyone can work the project. **Every command uses `uv`.**
-
-### How to run
+The commit message **must** be conventional — git-cliff derives every version
+bump from commit types, starting with this one (`feat:` → the initial
+`v0.1.0`). The mock `greet` code exists so tests demonstrably pass; it gets
+replaced by real code later. Libraries: also prove the wheel —
 
 ```bash
-uv sync --frozen          # reproduce the locked environment
-uv run -m pytest          # tests
-uv run <entry-point>      # or `uv run python -m <package>`
+uv build
+uv run --isolated --no-project --with dist/<pkg>-*.whl \
+  python -c "from <pkg> import greet; print(greet('wheel'))"
 ```
 
-### How to build (library / distributable code only)
+Services: `docker build -t <project-name> . && docker run --rm <project-name>`.
 
-```bash
-uv build                  # builds sdist + wheel into dist/
-```
+## 7. Publishing to PyPI — Trusted Publishing ONLY
 
-### How to validate the build
+Never store a PyPI token in GitHub secrets: `release.yml` exchanges the
+workflow run's OIDC identity for a short-lived token via
+`pypa/gh-action-pypi-publish` (that's the `id-token: write` permission and
+the `environment: pypi`). Unlike crates.io, **PyPI supports pending
+publishers** — the trusted publisher is registered *before* the project's
+first upload, so no token is ever needed:
 
-```bash
-# Confirm the wheel installs and imports cleanly in an isolated env:
-uv run --isolated --no-project --with dist/<name>-<ver>-py3-none-any.whl \
-  python -c "import <package>; print(<package>.__version__)"
+1. **Register the pending publisher:** PyPI → account → *Publishing* → *Add
+   a new pending publisher* (GitHub): project name, repository owner + name,
+   workflow filename `release.yml`, environment `pypi` (matches the
+   `environment:` in the workflow's publish job).
+2. **Push to GitHub.** The first release run tags `v0.1.0`, publishes the
+   GitHub release, and the OIDC upload creates the PyPI project — the
+   pending publisher becomes the project's normal trusted publisher.
 
-# Optional: check distribution metadata
-uvx twine check dist/*
-```
+If the publish job ever fails (e.g. publisher not registered yet), the tag
+and GitHub release have already landed — register the publisher and re-run
+via `workflow_dispatch`, which republishes the latest tag idempotently.
 
-## 7. Containerize (if the project ships as a container/service)
+## 8. After the push
 
-Use a multi-stage build so the final image contains the app and its venv but **not**
-`uv` itself. Base it on
-<https://github.com/astral-sh/uv-docker-example/blob/main/multistage.Dockerfile>.
+- Confirm the `ci` and `release` runs are green and Dependabot is active
+  (Insights → Dependency graph → Dependabot).
+- The repo's `CLAUDE.md` ships as a skeleton — once real code replaces the
+  mock, rewrite the description and add an Architecture section (`/init`
+  drafts it); `AGENTS.md` just includes `CLAUDE.md`.
 
-**Get the Python version right — this is the part that breaks silently.** The builder
-image, the final image, and the project's pinned version must all be the **same** Python
-release. The builder copies `/app/.venv` into the final image, and the venv hard-codes the
-interpreter path; if the final image's Python differs (even `3.12` vs `3.13`) the app
-fails to start. Substitute the version you pinned in step 3 (3.13 here) in **both**
-`FROM` lines:
+## Checklist
 
-```dockerfile
-# Build stage: uv image matching the pinned Python version.
-FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS builder
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
-ENV UV_NO_DEV=1               # omit dev dependencies
-ENV UV_PYTHON_DOWNLOADS=0     # use the image's interpreter, don't fetch one
-
-WORKDIR /app
-# Install deps first (cached layer) without the project, then the project itself.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project
-COPY . /app
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked
-
-# Final stage: plain python image — MUST be the same version as the builder above.
-FROM python:3.13-slim-trixie
-
-RUN groupadd --system --gid 999 nonroot \
- && useradd --system --gid 999 --uid 999 --create-home nonroot
-
-COPY --from=builder --chown=nonroot:nonroot /app /app
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1
-USER nonroot
-WORKDIR /app
-
-# Replace with this project's entry point (e.g. the console script or `python -m <pkg>`).
-CMD ["<entry-point>"]
-```
-
-Notes:
-
-- `uv sync --locked` is the container equivalent of `--frozen`: it installs from
-  `uv.lock` and fails if the lock is stale, so the image matches what's committed.
-- Add a `.dockerignore` (at least `.venv`, `__pycache__`, `.git`, `dist`) so the build
-  context stays small and the host venv never leaks into the image.
-- Keep the version in the Dockerfile, `.python-version`, and `requires-python` in lockstep
-  — bump them together.
-
-Build and smoke-test:
-
-```bash
-docker build -t <name> .
-docker run --rm <name>
-```
-
-If you change the Python version later, update both `FROM` lines and re-test.
-
-## Setup checklist
-
-- [ ] asked the user the project type (library / app / service / script)
-- [ ] `uv init --package` (or justified bare init)
-- [ ] `tool.uv.package = true` and a real `src/` layout
-- [ ] `.python-version` pinned to a stable release; `requires-python` matches
-- [ ] `.gitignore` checked: `.python-version` committed, `.venv` + `__pycache__` ignored at any depth
-- [ ] type checker installed and `uv run pyrefly check` is clean
-- [ ] pytest installed as a dev dep (`uv add --dev pytest`)
-- [ ] ruff + pyrefly pre-commit hooks pinned to tagged revs; `pre-commit install` run
-- [ ] README documents run / build / validate, all via `uv`
-- [ ] Dockerfile added if it's a service/container (versions in lockstep with the pin)
-- [ ] `uv run -m pytest` green
+- [ ] decisions asked (name, slug, description, type, Python, license, releases, PyPI)
+- [ ] `uv init --package` run (script → bare init, skill over); base + package + pyproject variant (+ service, + release) copied, nothing retyped; pre-commit config assembled from pre-commit-setup fragments + the Python layer
+- [ ] placeholder pass done; `grep -rF '{{'` shows only `${{ }}` / Tera hits
+- [ ] `uv python pin` + `uv add --dev pytest ruff pyrefly pre-commit` + `uv sync`; `.python-version` and `uv.lock` committed
+- [ ] LICENSE written; all `<!-- DELETE/KEEP -->` markers resolved; `git check-ignore` invariants verified
+- [ ] `pre-commit autoupdate --freeze` run; action pins checked
+- [ ] ruff + pyrefly + pytest green; hooks installed (pre-commit **and** commit-msg); first commit conventional
+- [ ] library: wheel built and validated in an isolated env
+- [ ] service: docker image builds and runs (Python versions in lockstep)
+- [ ] PyPI (if publishing): pending publisher registered *before* the push; first release lands via OIDC only

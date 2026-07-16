@@ -1,0 +1,93 @@
+name: release
+
+# Every merge to main cuts a release: the plan job asks git-cliff for the
+# next semver from the conventional commits since the last tag and runs the
+# test suite; the release job pushes the vX.Y.Z tag and publishes a GitHub
+# release with git-cliff release notes. If nothing releasable landed (only
+# unconventional or chore(release) commits), the bumped version equals the
+# latest tag and the run exits early.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Decides whether this run releases, tests the code, and renders the
+  # release notes the release job attaches later.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      release: ${{ steps.bump.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Compute version
+        id: bump
+        run: |
+          latest="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          next="$(git cliff --bumped-version)"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          if [ "$next" = "$latest" ]; then
+            echo "Nothing to release: bumped version $next equals the latest tag."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $next (previous: ${latest:-none})."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.bump.outputs.release == 'true'
+        run: cargo test --locked
+
+      - name: Render release notes
+        if: steps.bump.outputs.release == 'true'
+        run: |
+          git cliff --unreleased --tag "${{ steps.bump.outputs.version }}" -o release-notes.md
+          cat release-notes.md
+
+      - name: Upload release notes
+        if: steps.bump.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  # Tags and publishes the GitHub release with the rendered notes.
+  release:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Push tag
+        run: |
+          git tag "${{ needs.plan.outputs.version }}"
+          git push origin "${{ needs.plan.outputs.version }}"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.plan.outputs.version }}
+          body_path: release-notes.md

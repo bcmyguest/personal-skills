@@ -21,12 +21,14 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 
 | Skill | What |
 |-------|------|
-| `uv-setup` | Bootstrap a new Python project with uv |
-| `uv-develop` | Day-to-day uv dependency + test workflow |
-| `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
+| `uv-setup` | Scaffold a Python repo with uv from shipped templates — CI, auto-releases, PyPI Trusted Publishing |
+| `uv-develop` | Corrective uv operations — targeted upgrades, `--locked` vs `--frozen`, venv repair |
+| `pre-commit-setup` | Stand up pre-commit from shipped fragments — hygiene + Conventional Commits + hook-update policy |
+| `release-setup` | Release automation from Conventional Commits — canonical git-cliff config + GitLab tag/release pipeline |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
+| `rust-setup` | Scaffold a Rust repo from shipped templates — CI, auto-releases, crates.io Trusted Publishing |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
 | `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
 | `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
@@ -75,12 +77,14 @@ through the Claude Code marketplace.
 
 ```
 skills/                          # portable agent skills — one folder per skill (npx skills)
-  uv-setup/                  SKILL.md
+  uv-setup/                  SKILL.md + templates/
   uv-develop/                SKILL.md
-  pre-commit-setup/          SKILL.md
+  pre-commit-setup/          SKILL.md + templates/
+  release-setup/             SKILL.md + templates/
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
   react-ts-setup/            SKILL.md + references/
+  rust-setup/                SKILL.md + templates/
   senior-frontend-refactor/  SKILL.md
   add-ansible-role/          SKILL.md + config.json + templates/
   debug-lemonade/            SKILL.md

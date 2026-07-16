@@ -1,0 +1,21 @@
+# .python-version is deliberately NOT listed here — it must stay committed so
+# contributors and CI pin the same interpreter. Don't add it, and don't add
+# any broad rule that would swallow it. Verify with:
+#   git check-ignore -v .python-version   # must print nothing (exit 1)
+
+# No leading slashes on the two below: an unanchored pattern matches at ANY
+# depth (pkg/.venv, a/b/__pycache__). A leading slash (/.venv) would only
+# ignore the top-level one — don't add it.
+.venv
+__pycache__/
+*.py[oc]
+
+# Build artifacts
+build/
+dist/
+wheels/
+*.egg-info
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/

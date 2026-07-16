@@ -1,0 +1,58 @@
+# GitLab release automation: on every push to the default branch, compute the
+# next semver from Conventional Commits (git-cliff), and if it moved past the
+# latest tag, create the vX.Y.Z tag and a GitLab Release with generated notes.
+# If nothing releasable landed, both jobs no-op. Included from .gitlab-ci.yml;
+# reads cliff.toml at the repo root.
+#
+# If the project protects `v*` tags, the release job can only create them from
+# pipelines run by a user allowed to create protected tags — check
+# Settings → Repository → Protected tags.
+
+release:plan:
+  stage: release
+  image:
+    name: orhun/git-cliff:latest
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0" # git-cliff needs full history and tags
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - latest="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+    - next="$(git-cliff --bumped-version)"
+    - |
+      if [ "$next" = "$latest" ]; then
+        echo "Nothing to release: bumped version $next equals the latest tag."
+        echo "RELEASE=false" > plan.env
+        touch release-notes.md
+      else
+        echo "Releasing $next (previous: ${latest:-none})."
+        { echo "RELEASE=true"; echo "VERSION=$next"; } > plan.env
+        git-cliff --unreleased --tag "$next" -o release-notes.md
+        cat release-notes.md
+      fi
+  artifacts:
+    reports:
+      dotenv: plan.env # exposes RELEASE / VERSION to release:publish
+    paths:
+      - release-notes.md
+
+release:publish:
+  stage: release
+  needs: [release:plan]
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    # release-cli creates the tag (at --ref) and the release in one call,
+    # authenticated by the job token; --description takes a file path.
+    - |
+      if [ "$RELEASE" != "true" ]; then
+        echo "Nothing to release."
+        exit 0
+      fi
+      release-cli create \
+        --name "$VERSION" \
+        --tag-name "$VERSION" \
+        --ref "$CI_COMMIT_SHA" \
+        --description release-notes.md

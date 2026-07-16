@@ -1,0 +1,181 @@
+name: release
+
+# Every merge to main cuts a release: the plan job asks git-cliff for the
+# next semver from the conventional commits since the last tag and runs the
+# test suite; the release job pushes the vX.Y.Z tag, publishes a GitHub
+# release with git-cliff release notes, and pushes the crate to crates.io via
+# Trusted Publishing (OIDC; the crate on crates.io must list this repo +
+# release.yml as a trusted publisher, or the publish step fails the run). If
+# nothing releasable landed (only unconventional or chore(release) commits),
+# the bumped version equals the latest tag and the run exits early.
+#
+# Manual runs (workflow_dispatch) skip the release half and only (re)publish
+# the latest existing tag to crates.io — e.g. to backfill a version whose
+# crates.io publish failed. Publishing is idempotent: if the version is
+# already on crates.io the run exits early.
+#
+# The crate version in Cargo.toml stays at its committed value; the published
+# crate is stamped with the tag version at publish time.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write # crates.io Trusted Publishing (OIDC)
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Decides what this run does (release, republish, or nothing), tests the
+  # code, and renders the release notes the release job attaches later.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      release: ${{ steps.bump.outputs.release }}
+      skip: ${{ steps.bump.outputs.skip }}
+      already: ${{ steps.published.outputs.already }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        if: github.event_name == 'push'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      # Sets three outputs: `version` (the vX.Y.Z being built), `release`
+      # (tag + GitHub release wanted, i.e. a push with releasable commits),
+      # and `skip` (nothing to do at all).
+      - name: Compute version
+        id: bump
+        run: |
+          latest="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -z "$latest" ]; then
+              echo "No tags exist yet; nothing to publish."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Republishing latest tag $latest to crates.io."
+            echo "version=$latest" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            next="$(git cliff --bumped-version)"
+            echo "version=$next" >> "$GITHUB_OUTPUT"
+            if [ "$next" = "$latest" ]; then
+              echo "Nothing to release: bumped version $next equals the latest tag."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Releasing $next (previous: ${latest:-none})."
+              echo "release=true" >> "$GITHUB_OUTPUT"
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # crates.io returns 200 for a published version and 404 otherwise.
+      # Only manual reruns can hit an already-published version; push runs
+      # always carry a strictly newer one.
+      - name: Check crates.io for this version
+        id: published
+        if: steps.bump.outputs.skip == 'false'
+        run: |
+          version="${{ steps.bump.outputs.version }}"
+          status="$(curl -s -o /dev/null -w '%{http_code}' \
+            -A '{{crate_name}} release workflow (https://github.com/${{ github.repository }})' \
+            "https://crates.io/api/v1/crates/{{crate_name}}/${version#v}")"
+          if [ "$status" = "200" ]; then
+            echo "$version is already on crates.io."
+            echo "already=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.bump.outputs.release == 'true'
+        run: cargo test --locked
+
+      - name: Render release notes
+        if: steps.bump.outputs.release == 'true'
+        run: |
+          git cliff --unreleased --tag "${{ steps.bump.outputs.version }}" -o release-notes.md
+          cat release-notes.md
+
+      - name: Upload release notes
+        if: steps.bump.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  # Tags, publishes the GitHub release, and pushes the crate to crates.io.
+  # Also the entire back half of a manual republish run.
+  release:
+    needs: plan
+    if: needs.plan.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Manual runs publish the tagged code, not whatever main has moved to.
+      - name: Check out the tag
+        if: needs.plan.outputs.release == 'false'
+        run: git checkout "refs/tags/${{ needs.plan.outputs.version }}"
+
+      - name: Download release notes
+        if: needs.plan.outputs.release == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Push tag
+        if: needs.plan.outputs.release == 'true'
+        run: |
+          git tag "${{ needs.plan.outputs.version }}"
+          git push origin "${{ needs.plan.outputs.version }}"
+
+      - name: Publish release
+        if: needs.plan.outputs.release == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.plan.outputs.version }}
+          body_path: release-notes.md
+
+      # Cargo.lock records the root crate's version too — stamp both so the
+      # --locked publish succeeds.
+      - name: Stamp crate version
+        if: needs.plan.outputs.already == 'false'
+        run: |
+          version="${{ needs.plan.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+          perl -0pi -e "s/(name = \"{{crate_name}}\"\nversion = )\"[^\"]*\"/\${1}\"${version#v}\"/" Cargo.lock
+
+      # Exchanges the run's OIDC identity for a short-lived crates.io token
+      # (Trusted Publishing — no long-lived secret). Fails the run if the
+      # crate doesn't list this repo/workflow as a trusted publisher; the tag
+      # and GitHub release above have already landed by then, so recover by
+      # registering the publisher and re-running via workflow_dispatch.
+      - name: Authenticate with crates.io
+        id: crates-auth
+        if: needs.plan.outputs.already == 'false'
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # Publishes the crate with the same stamped version as the tag.
+      # --locked so the verify build honors the committed dependency lock;
+      # --allow-dirty because the version stamp above edits files in place.
+      - name: Publish to crates.io
+        if: needs.plan.outputs.already == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+        run: cargo publish --locked --allow-dirty
