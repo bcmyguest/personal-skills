@@ -1,0 +1,13 @@
+# Keep the build context small, and never let the host venv leak into the
+# image — the Dockerfile builds its own /app/.venv.
+.venv
+__pycache__
+*.py[oc]
+.git
+.github
+dist
+build
+.pytest_cache
+.ruff_cache
+.pre-commit-config.yaml
+tests

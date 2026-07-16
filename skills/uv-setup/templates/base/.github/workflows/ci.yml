@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv publishes no moving major tags since v8 (@v8 doesn't exist) —
+      # pin the full immutable version; Dependabot keeps it current.
+      - uses: astral-sh/setup-uv@v8.3.2
+
+      # --frozen installs exactly what uv.lock says and fails if it's stale —
+      # CI always runs the committed environment, never a fresh resolve.
+      - name: Sync
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Format
+        run: uv run ruff format --check
+
+      - name: Types
+        run: uv run pyrefly check
+
+      - name: Test
+        run: uv run -m pytest

@@ -21,7 +21,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 
 | Skill | What |
 |-------|------|
-| `uv-setup` | Bootstrap a new Python project with uv |
+| `uv-setup` | Scaffold a Python repo with uv from shipped templates — CI, auto-releases, PyPI Trusted Publishing |
 | `uv-develop` | Day-to-day uv dependency + test workflow |
 | `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
@@ -76,7 +76,7 @@ through the Claude Code marketplace.
 
 ```
 skills/                          # portable agent skills — one folder per skill (npx skills)
-  uv-setup/                  SKILL.md
+  uv-setup/                  SKILL.md + templates/
   uv-develop/                SKILL.md
   pre-commit-setup/          SKILL.md
   watchlist/                 SKILL.md
