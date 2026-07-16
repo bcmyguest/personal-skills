@@ -23,7 +23,8 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 |-------|------|
 | `uv-setup` | Scaffold a Python repo with uv from shipped templates — CI, auto-releases, PyPI Trusted Publishing |
 | `uv-develop` | Corrective uv operations — targeted upgrades, `--locked` vs `--frozen`, venv repair |
-| `pre-commit-setup` | Stand up pre-commit with the standard hygiene hooks |
+| `pre-commit-setup` | Stand up pre-commit from shipped fragments — hygiene + Conventional Commits + hook-update policy |
+| `gitlab-release` | Automated GitLab releases — git-cliff semver + tag + release notes from Conventional Commits |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
@@ -78,7 +79,8 @@ through the Claude Code marketplace.
 skills/                          # portable agent skills — one folder per skill (npx skills)
   uv-setup/                  SKILL.md + templates/
   uv-develop/                SKILL.md
-  pre-commit-setup/          SKILL.md
+  pre-commit-setup/          SKILL.md + templates/
+  gitlab-release/            SKILL.md + templates/
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
   react-ts-setup/            SKILL.md + references/

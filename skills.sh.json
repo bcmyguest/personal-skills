@@ -18,6 +18,11 @@
       "skills": ["rust-setup"]
     },
     {
+      "title": "Release automation",
+      "description": "Automated releases from Conventional Commits with git-cliff — GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).",
+      "skills": ["gitlab-release"]
+    },
+    {
       "title": "Frontend",
       "description": "Scaffold a React + TypeScript repo with Vite, and refactor existing frontend code as a senior engineer.",
       "skills": ["react-ts-setup", "senior-frontend-refactor"]
