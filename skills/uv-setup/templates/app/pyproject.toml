@@ -1,7 +1,3 @@
-# Shipped complete — overwrites the pyproject.toml that `uv init --package`
-# generated. Dev tooling is added AFTER the placeholder pass with
-# `uv add --dev pytest ruff pyrefly pre-commit`, so dependency versions come
-# from scaffold time, never from this template.
 [project]
 name = "{{project_name}}"
 version = "0.1.0"  # never hand-bumped: release.yml stamps the tag version at build time

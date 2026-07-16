@@ -1,93 +1,93 @@
 ---
 name: pre-commit-setup
-description: Stand up pre-commit in a repository with the standard hygiene hooks — trailing-whitespace, end-of-file newline, YAML/JSON/TOML checks, large-file and merge-conflict guards — then install the git hook and run it across the repo. Use when adding pre-commit to a project, asked to "set up pre-commit" or "add commit hooks", or to establish baseline formatting hygiene. Language-specific linters (ruff, pyrefly, etc.) are layered on top by the relevant project-setup skill.
+description: Stand up pre-commit in a repository from shipped config fragments — the standard hygiene hooks (whitespace, EOF newline, YAML/JSON/TOML checks, large-file and merge-conflict guards) plus an optional Conventional Commits layer — then install the git hooks and run across the repo. Also the canonical policy for updating hooks safely (autoupdate --freeze to immutable SHAs). Use when adding pre-commit to a project, asked to "set up pre-commit" or "add commit hooks", when updating/refreshing hook pins, or when called from a project-setup skill (rust-setup, uv-setup, react-ts-setup) that layers its language hooks on top.
 ---
 
 # Setting up pre-commit
 
-This skill establishes the **baseline** pre-commit config: the language-agnostic hygiene
-hooks every repo should have (end-of-line/whitespace normalization, file checks). Project-
-specific linters and formatters (e.g. ruff + pyrefly from the **uv-setup** skill) are
-appended to the same `.pre-commit-config.yaml`, not configured here.
-
-**Steps:** (1) install pre-commit as a tracked dev dep → (2) write the baseline hygiene
-hooks → (3) `pre-commit install` and run across the repo → (4) keep it healthy by pinning
-to commit SHAs, not blindly auto-updating.
+This skill owns the shared pre-commit machinery: the **baseline hygiene
+hooks**, the optional **Conventional Commits** layer, hook installation, and
+the **update policy**. Language-specific hooks (cargo fmt/clippy, ruff +
+pyrefly, …) are shipped as fragments by the relevant project-setup skill and
+concatenated with the fragments here — nothing is retyped.
 
 ## 1. Install pre-commit
 
-Use the project's package manager so the dependency is tracked. In a uv project:
+Use the project's package manager so the dependency is tracked. In a uv
+project:
 
 ```bash
 uv add --dev pre-commit
 ```
 
-If it isn't a uv project (or has no package manager to track the dependency), **ask the
-user** how they want pre-commit installed (`pipx install pre-commit`,
-`brew install pre-commit`, system package, etc.) rather than picking for them — but
-recommend tracking it as a dev dependency wherever that's possible.
+If there's no package manager to track it (e.g. a Rust or plain repo), **ask
+the user** how to install it (`pipx install pre-commit`,
+`brew install pre-commit`, system package) rather than picking for them.
+(Prefix the commands below with `uv run` when it's a tracked dev dep.)
 
-## 2. Create the baseline config
+## 2. Assemble `.pre-commit-config.yaml` from fragments
 
-If `.pre-commit-config.yaml` doesn't exist, create it with the standard hooks from
-<https://github.com/pre-commit/pre-commit-hooks>. Pin `rev` to that repo's **latest
-tagged release** (don't guess — check the tags):
+The config is built by concatenating fragment files under one `repos:`
+header. Fragments shipped here in [`templates/`](templates/):
 
-```yaml
-repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0          # use the latest tagged release
-    hooks:
-      - id: trailing-whitespace      # strip trailing whitespace
-      - id: end-of-file-fixer        # ensure exactly one trailing newline
-      - id: mixed-line-ending        # normalize line endings (LF)
-        args: [--fix=lf]
-      - id: check-yaml               # validate YAML syntax
-      - id: check-toml               # validate TOML syntax
-      - id: check-json               # validate JSON syntax
-      - id: check-added-large-files  # block accidental large blobs
-      - id: check-merge-conflict     # block leftover conflict markers
-      - id: check-case-conflict      # catch case-insensitive filename clashes
-```
+- `hygiene.repos.yaml` — the baseline every repo gets.
+- `conventional-commits.repos.yaml` — commit-msg enforcement; include it
+  whenever release automation derives versions from commit types (the
+  rust-setup / uv-setup / gitlab-release flows).
 
-If the file already exists, merge these in rather than overwriting other repos' hooks.
-Tags read clearly but are mutable; for stronger guarantees pin to commit SHAs — see the
-supply-chain note in step 4.
-
-## 3. Install the git hook and run it
+A calling setup skill contributes its own language fragment (e.g.
+`rust-setup/templates/pre-commit-rust.repos.yaml`,
+`uv-setup/templates/pre-commit-python.repos.yaml`). With `$PCS` = this
+skill's directory:
 
 ```bash
-uv run pre-commit install          # wire up the .git/hooks/pre-commit hook
-uv run pre-commit run --all-files  # apply to the whole repo once
+{ echo 'repos:'; cat "$PCS/templates/hygiene.repos.yaml" \
+    "$PCS/templates/conventional-commits.repos.yaml" \
+    "<language fragment, if any>"; } > .pre-commit-config.yaml
 ```
 
-(Drop the `uv run` prefix if pre-commit is installed globally rather than as a dev dep.)
+Drop the conventional-commits line if the repo has no commit-type-driven
+release automation. If `.pre-commit-config.yaml` already exists, **merge**
+the fragments' `repos:` entries in rather than overwriting other hooks.
 
-The first `run --all-files` will likely modify files (fixing whitespace, newlines, line
-endings). That's expected — review the changes, then **commit them** so the working tree
-is clean and future commits only show real diffs.
+## 3. Install the git hooks and run
 
-## 4. Keep it healthy (without blindly trusting upstream)
+```bash
+pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg
+pre-commit run --all-files
+```
 
-Pre-commit hooks run arbitrary code from third-party repos on every commit, so treat
-updates as a supply-chain surface:
+(The `--hook-type commit-msg` matters only when the conventional-commits
+fragment is included, and is harmless otherwise.) The first `run --all-files`
+will likely modify files (whitespace, newlines, line endings) — review, then
+**commit the fixes** so future diffs stay clean.
 
-- **Don't auto-accept `autoupdate`.** Plain `pre-commit autoupdate` moves each `rev` to
-  the latest tag, and git tags are *mutable* — a compromised or coerced maintainer can
-  re-point a tag at malicious code. Pulling "the latest tag" blind is the exact risk.
-- **Pin to immutable commit SHAs.** Use `uv run pre-commit autoupdate --freeze`, which
-  resolves each hook to the underlying 40-char commit hash (keeping the tag as a comment).
-  A SHA can't be moved, so the pin is reproducible.
-- **Review every bump before committing.** When a `rev` changes, look at the upstream diff
-  (compare the old SHA/tag to the new one) and confirm the tag/release is signed or comes
-  from the expected maintainer before accepting. Update deliberately, not on a schedule.
-- Hooks run automatically on `git commit`; run `pre-commit run --all-files` manually after
-  editing the config.
-- In CI, run `pre-commit run --all-files` to enforce the same checks on every push.
+## 4. Updating hooks — the canonical policy
+
+Pre-commit hooks run arbitrary third-party code on every commit, so treat
+updates as a supply-chain surface. This section is the single home of that
+policy — setup skills point here instead of restating it:
+
+- **Refresh pins with `pre-commit autoupdate --freeze`** — both right after
+  copying fragments (their pins were current when written, not today) and on
+  later deliberate updates. `--freeze` resolves each hook to the immutable
+  40-char **commit SHA**, keeping the tag as a comment.
+- **Never plain `autoupdate`.** It moves `rev` to the latest *tag*, and git
+  tags are mutable — a compromised maintainer can re-point one at malicious
+  code.
+- **Review every bump before committing** — compare old SHA to new upstream,
+  confirm the release comes from the expected maintainer. Update
+  deliberately, not on a schedule.
+- Local (`repo: local`) hooks have no pin — they run the project's own
+  toolchain and update with it.
+- In CI, `pre-commit run --all-files` enforces the same checks on every push
+  (the rust-setup/uv-setup CI templates instead run the underlying tools
+  directly — same effect, pick one, not both).
 
 ## Checklist
 
 - [ ] pre-commit installed (tracked as a dev dependency where possible)
-- [ ] `.pre-commit-config.yaml` has the baseline hygiene hooks, `rev` pinned to a tag
-- [ ] `pre-commit install` run; `pre-commit run --all-files` passes
+- [ ] config assembled from fragments (hygiene + conventional-commits if release automation + language layer from the calling skill)
+- [ ] `pre-commit autoupdate --freeze` run after assembly
+- [ ] hooks installed (both hook types when conventional-commits is included); `run --all-files` passes
 - [ ] formatting fixes from the first run committed

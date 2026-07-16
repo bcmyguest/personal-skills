@@ -1,6 +1,6 @@
 ---
 name: rust-setup
-description: Scaffold a new Rust repo by copying shipped template files — CI (fmt, clippy -D warnings, locked tests), pre-commit + Conventional Commits, Dependabot, git-cliff auto-release on merge to main with static binaries, crates.io Trusted Publishing (never long-lived tokens), and a tested hello-world mock (CLI bin+lib or pure library). Generalized from bcmyguest/powerline-claude. Meant to be invoked deliberately — use only when explicitly asked to scaffold, bootstrap, or set up a new Rust repo or crate. Not for working in existing Rust projects, and not a trigger for casual Rust questions.
+description: Scaffold a new Rust repo by copying shipped template files — CI (fmt, clippy -D warnings, locked tests), pre-commit + Conventional Commits, Dependabot, git-cliff auto-release on merge to main with static binaries, crates.io Trusted Publishing (never long-lived tokens), and a tested hello-world mock (CLI bin+lib or pure library). Use only when explicitly asked to scaffold, bootstrap, or set up a new Rust repo, crate, or CLI project — invoke deliberately, e.g. "/rust-setup" or "set up a new rust repo". Not for working in existing Rust projects, and not a trigger for casual Rust questions.
 ---
 
 # Scaffolding a Rust repo
@@ -48,7 +48,19 @@ cp "$SKILL/templates/lib/Cargo.toml" .           # library: Cargo.toml only
 cp "$SKILL/templates/release/cliff.toml" .
 mkdir -p .github/workflows
 cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
+
+# Pre-commit — assembled from the pre-commit-setup skill's shared fragments
+# plus this skill's Rust layer ($PCS = the installed pre-commit-setup skill,
+# a sibling of $SKILL; drop the conventional-commits line if releases: none):
+{ echo 'repos:'; cat "$PCS/templates/hygiene.repos.yaml" \
+    "$PCS/templates/conventional-commits.repos.yaml" \
+    "$SKILL/templates/pre-commit-rust.repos.yaml"; } > .pre-commit-config.yaml
 ```
+
+The pre-commit machinery (install, hook types, merge-into-existing) is the
+**pre-commit-setup** skill's job — follow it with the assembled config. If
+that skill isn't installed alongside this one, fetch its fragments from the
+same repo this skill came from.
 
 Release variants — pick one:
 
@@ -92,10 +104,9 @@ GitHub-Actions `${{ … }}` expressions and cliff.toml's Tera template.
 The templates pin versions that were current when the skill was written; the
 scaffold should start from *today's*:
 
-- `pre-commit autoupdate --freeze` — moves each hook to the latest release's
-  **commit SHA** (immutable; the tag stays as a comment). The supply-chain
-  rationale lives in the **pre-commit-setup** skill: never blind-`autoupdate`
-  to mutable tags.
+- `pre-commit autoupdate --freeze` — the **pre-commit-setup** skill owns the
+  hook-update / supply-chain policy (immutable SHAs, never plain
+  `autoupdate`); follow its step 4.
 - Check the `uses:` action majors in the copied workflows against upstream
   latest; bump if a new major exists. After the first push, **Dependabot owns
   this** (`.github/dependabot.yml` covers `cargo` + `github-actions`, weekly,
@@ -155,7 +166,7 @@ workflow via `workflow_dispatch`, which republishes the latest tag idempotently.
 ## Checklist
 
 - [ ] decisions asked (name, slug, description, type, license, releases, crates.io)
-- [ ] base layer + crate-type layer + release variant copied, nothing retyped
+- [ ] base layer + crate-type layer + release variant copied, nothing retyped; pre-commit config assembled from pre-commit-setup fragments + the Rust layer
 - [ ] placeholder pass done; `grep -rF '{{'` shows only `${{ }}` / Tera hits
 - [ ] LICENSE file(s) written; all `<!-- DELETE/KEEP -->` markers resolved
 - [ ] `pre-commit autoupdate --freeze` run; action majors checked; `Cargo.lock` committed

@@ -62,7 +62,20 @@ cp "$SKILL/templates/service/Dockerfile" "$SKILL/templates/service/.dockerignore
 # Release automation (skip both lines entirely if "none"):
 cp "$SKILL/templates/release/cliff.toml" .
 cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
+
+# Pre-commit — assembled from the pre-commit-setup skill's shared fragments
+# plus this skill's Python layer ($PCS = the installed pre-commit-setup
+# skill, a sibling of $SKILL; drop the conventional-commits line if
+# releases: none):
+{ echo 'repos:'; cat "$PCS/templates/hygiene.repos.yaml" \
+    "$PCS/templates/conventional-commits.repos.yaml" \
+    "$SKILL/templates/pre-commit-python.repos.yaml"; } > .pre-commit-config.yaml
 ```
+
+The pre-commit machinery (install, hook types, merge-into-existing) is the
+**pre-commit-setup** skill's job — follow it with the assembled config. If
+that skill isn't installed alongside this one, fetch its fragments from the
+same repo this skill came from.
 
 Release variants — pick one: `release-pypi.yml` if publishing to PyPI
 (tag + GitHub release + OIDC upload), else `release-github.yml` (tag +
@@ -119,11 +132,10 @@ git check-ignore .venv a/b/.venv a/__pycache__/x.pyc   # expect all three printe
 
 ## 5. Refresh the moving parts — don't trust shipped pins
 
-- `uv run pre-commit autoupdate --freeze` — moves each hook to the latest
-  release's **commit SHA** (immutable; the tag stays as a comment). The
-  supply-chain rationale lives in the **pre-commit-setup** skill; that skill
-  also owns the baseline hygiene hooks already included in the shipped
-  config.
+- `uv run pre-commit autoupdate --freeze` — the **pre-commit-setup** skill
+  owns the hook-update / supply-chain policy (immutable SHAs, never plain
+  `autoupdate`) as well as the hygiene + conventional-commits fragments the
+  config was assembled from; follow its step 4.
 - Check the `uses:` pins in the copied workflows against upstream latest
   (`setup-uv` publishes no moving major tags since v8 — pin full versions).
   After the first push, **Dependabot owns this** (`.github/dependabot.yml`
@@ -186,7 +198,7 @@ via `workflow_dispatch`, which republishes the latest tag idempotently.
 ## Checklist
 
 - [ ] decisions asked (name, slug, description, type, Python, license, releases, PyPI)
-- [ ] `uv init --package` run (script → bare init, skill over); base + package + pyproject variant (+ service, + release) copied, nothing retyped
+- [ ] `uv init --package` run (script → bare init, skill over); base + package + pyproject variant (+ service, + release) copied, nothing retyped; pre-commit config assembled from pre-commit-setup fragments + the Python layer
 - [ ] placeholder pass done; `grep -rF '{{'` shows only `${{ }}` / Tera hits
 - [ ] `uv python pin` + `uv add --dev pytest ruff pyrefly pre-commit` + `uv sync`; `.python-version` and `uv.lock` committed
 - [ ] LICENSE written; all `<!-- DELETE/KEEP -->` markers resolved; `git check-ignore` invariants verified

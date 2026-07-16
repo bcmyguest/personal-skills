@@ -1,0 +1,23 @@
+  # ruff from its official pre-commit mirror, mirroring ci.yml.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 01a675ea018f2fb714478a5ffb83fcea8374bb06  # frozen: v0.15.21
+    hooks:
+      - id: ruff-check               # lint
+        args: [--fix]
+      - id: ruff-format              # format
+
+  # pyrefly MUST be a local hook run via `uv run`: that executes this
+  # project's own dev-dep pyrefly inside the project venv, where it can
+  # resolve third-party imports. The published facebook/pyrefly-pre-commit
+  # hook installs pyrefly into an isolated env WITHOUT your dependencies and
+  # falsely reports `missing-import` for every third-party package — never
+  # use it in a uv project.
+  - repo: local
+    hooks:
+      - id: pyrefly
+        name: pyrefly
+        entry: uv run pyrefly check
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false        # pyrefly checks the whole project, not single files
+        require_serial: true

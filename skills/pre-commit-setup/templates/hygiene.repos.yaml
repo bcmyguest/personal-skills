@@ -1,0 +1,13 @@
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace      # strip trailing whitespace
+      - id: end-of-file-fixer        # ensure exactly one trailing newline
+      - id: mixed-line-ending        # normalize line endings (LF)
+        args: [--fix=lf]
+      - id: check-yaml               # validate YAML syntax
+      - id: check-toml               # validate TOML syntax
+      - id: check-json               # validate JSON syntax
+      - id: check-added-large-files  # block accidental large blobs
+      - id: check-merge-conflict     # block leftover conflict markers
+      - id: check-case-conflict      # catch case-insensitive filename clashes
