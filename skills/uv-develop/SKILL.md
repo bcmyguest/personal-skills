@@ -1,12 +1,26 @@
 ---
 name: uv-develop
-description: Fixes for uv dependency and lockfile operations an agent otherwise gets wrong — upgrading one package without churning the rest, resolving "lockfile out of date" / stale-lock CI failures, and repairing a broken or drifted .venv. Use when upgrading, bumping, or pinning a dependency; when uv reports the lockfile is stale or out of date; when uv sync/uv run fails on the lock; or when the venv is broken, drifted, or has untracked packages. Corrective notes only — routine uv add / uv remove / uv run need no skill.
+description: Fixes for uv operations an agent otherwise gets wrong — running Python through uv instead of bare python/pip/pytest, upgrading one package without churning the rest, resolving "lockfile out of date" / stale-lock CI failures, and repairing a broken or drifted .venv. Use whenever working in a uv project, i.e. any repo containing a uv.lock (or [tool.uv] in pyproject.toml) — especially before running Python scripts, tests, or tools there; and when upgrading, bumping, or pinning a dependency, when uv reports the lockfile is stale or out of date, or when the venv is broken, drifted, or has untracked packages.
 ---
 
 # uv: the operations models get wrong
 
 Routine `uv add <pkg>`, `uv remove <pkg>`, `uv run <cmd>` are correct as-is — do them directly.
 This skill covers only the cases where the obvious command is the wrong one.
+
+## In a uv project, EVERYTHING runs through uv
+
+If the repo has a `uv.lock`, it's a uv project — never reach for bare `python`, `pip`, `pytest`,
+or a hand-activated venv, even for "just running a quick script". Bare invocations hit the wrong
+interpreter or an environment missing the project's deps; `uv run` first ensures the venv exists
+and matches the lock, then runs the command inside it:
+
+```bash
+uv run python script.py       # not: python script.py
+uv run -m pytest              # not: pytest
+uv run <console-script>       # project entry points too
+uv run --with rich python scratch.py   # ad-hoc extra dep, without touching the project
+```
 
 ## Upgrade ONE package — not the whole world
 
@@ -71,6 +85,7 @@ consistent.
 
 | Situation | Command |
 | --- | --- |
+| Run a script / tests / tool in the project | `uv run python script.py` · `uv run -m pytest` — never bare `python`/`pytest` |
 | Bump one dependency | `uv lock --upgrade-package <pkg> && uv sync` |
 | Bump everything (deliberate) | `uv lock --upgrade && uv sync` |
 | CI / verify a clone (fail on stale lock) | `uv sync --locked` |
