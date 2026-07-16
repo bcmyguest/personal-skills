@@ -40,9 +40,10 @@ overlay earlier ones.
 # Always — the base layer (note the /. so dotfiles come along):
 cp -R "$SKILL/templates/base/." .
 
-# Crate type — exactly one:
+# Crate type — run exactly ONE of the following:
 cp -R "$SKILL/templates/cli/." .                 # CLI: Cargo.toml, src/main.rs, tests/cli.rs
-cp "$SKILL/templates/lib/Cargo.toml" .           # library: Cargo.toml only
+# …or, for a library:
+# cp "$SKILL/templates/lib/Cargo.toml" .         # library: Cargo.toml only
 
 # Release automation (skip all three lines entirely if "none"; $RS = the
 # installed release-setup skill, a sibling of $SKILL — it owns the canonical
@@ -72,7 +73,7 @@ Release variants — pick one:
 | CLI        | yes       | `release/release-cli-crates.yml`                |
 | CLI        | no        | `release/release-cli-only.yml`                  |
 | library    | yes       | `release/release-lib-crates.yml`                |
-| library    | no        | `release-cli-only.yml`, then delete the `build` job and the binary/checksum steps in `release` |
+| library    | no        | `release/release-lib-only.yml`                  |
 
 ## 2. Fill the placeholders
 

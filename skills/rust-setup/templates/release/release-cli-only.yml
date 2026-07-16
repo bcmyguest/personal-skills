@@ -100,11 +100,13 @@ jobs:
       - uses: actions/checkout@v7
 
       # perl, not sed -i: the in-place flag differs between GNU and BSD sed
-      # and this step runs on both Linux and macOS.
+      # and this step runs on both Linux and macOS. Cargo.lock records the
+      # root crate's version too — stamp both so --locked builds succeed.
       - name: Stamp crate version
         run: |
           version="${{ needs.plan.outputs.version }}"
           perl -pi -e "s/^version = \".*\"/version = \"${version#v}\"/" Cargo.toml
+          perl -0pi -e "s/(name = \"{{crate_name}}\"\nversion = )\"[^\"]*\"/\${1}\"${version#v}\"/" Cargo.lock
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -116,7 +118,7 @@ jobs:
 
       - name: Build static binary
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --locked --target ${{ matrix.target }}
           mkdir -p release
           cp "target/${{ matrix.target }}/release/{{crate_name}}" \
             "release/{{crate_name}}-${{ matrix.target }}"

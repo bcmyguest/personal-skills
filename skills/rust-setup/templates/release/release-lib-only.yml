@@ -1,14 +1,11 @@
 name: release
 
-# Every merge to main cuts a release: git-cliff computes the next semver from
-# the conventional commits since the last tag, the run tests the code, pushes
-# the vX.Y.Z tag, and publishes a GitHub release with generated notes. No
-# package is uploaded anywhere — use release-pypi.yml for PyPI publishing.
-# If nothing releasable landed (only unconventional or chore(release)
-# commits), the bumped version equals the latest tag and the run exits early.
-#
-# The version in pyproject.toml stays at its committed value; the tag is the
-# version of record.
+# Every merge to main cuts a release: the plan job asks git-cliff for the
+# next semver from the conventional commits since the last tag and runs the
+# test suite; the release job pushes the vX.Y.Z tag and publishes a GitHub
+# release with git-cliff release notes. If nothing releasable landed (only
+# unconventional or chore(release) commits), the bumped version equals the
+# latest tag and the run exits early.
 
 on:
   push:
@@ -22,8 +19,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  # Decides whether this run releases, tests the code, and renders the
+  # release notes the release job attaches later.
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      release: ${{ steps.bump.outputs.release }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,14 +50,9 @@ jobs:
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: astral-sh/setup-uv@v8.3.2
-        if: steps.bump.outputs.release == 'true'
-
       - name: Test
         if: steps.bump.outputs.release == 'true'
-        run: |
-          uv sync --locked
-          uv run -m pytest
+        run: cargo test --locked
 
       - name: Render release notes
         if: steps.bump.outputs.release == 'true'
@@ -63,15 +60,34 @@ jobs:
           git cliff --unreleased --tag "${{ steps.bump.outputs.version }}" -o release-notes.md
           cat release-notes.md
 
-      - name: Push tag
+      - name: Upload release notes
         if: steps.bump.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  # Tags and publishes the GitHub release with the rendered notes.
+  release:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Push tag
         run: |
-          git tag "${{ steps.bump.outputs.version }}"
-          git push origin "${{ steps.bump.outputs.version }}"
+          git tag "${{ needs.plan.outputs.version }}"
+          git push origin "${{ needs.plan.outputs.version }}"
 
       - name: Publish release
-        if: steps.bump.outputs.release == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.bump.outputs.version }}
+          tag_name: ${{ needs.plan.outputs.version }}
           body_path: release-notes.md

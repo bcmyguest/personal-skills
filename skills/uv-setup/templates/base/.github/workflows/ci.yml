@@ -15,10 +15,11 @@ jobs:
       # pin the full immutable version; Dependabot keeps it current.
       - uses: astral-sh/setup-uv@v8.3.2
 
-      # --frozen installs exactly what uv.lock says and fails if it's stale —
-      # CI always runs the committed environment, never a fresh resolve.
+      # --locked installs exactly what uv.lock says and FAILS if the lock is
+      # stale relative to pyproject.toml — CI runs the committed environment
+      # and catches un-locked dependency edits (--frozen would skip that check).
       - name: Sync
-        run: uv sync --frozen
+        run: uv sync --locked
 
       - name: Lint
         run: uv run ruff check

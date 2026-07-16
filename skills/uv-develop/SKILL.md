@@ -74,12 +74,13 @@ consistent.
 - **Don't `uv pip install <pkg>` inside a uv project.** It mutates `.venv` without touching
   `pyproject.toml` or `uv.lock`, so the change is untracked and vanishes on the next `uv sync`.
   Use `uv add <pkg>` (or `uv add --dev <pkg>`) instead.
-- **Untracked packages / drift:** re-sync from the lock. `uv sync` removes anything not in the lock
-  by default, restoring the environment to exactly what's committed.
-- **Genuinely corrupt venv:** delete and rebuild — `rm -rf .venv && uv sync`. uv recreates it from
-  `uv.lock`.
+- **Untracked packages / drift:** re-sync from the lock with `uv sync --frozen` — it removes
+  anything not in the lock and restores the environment to exactly what's committed (`--frozen`
+  because a bare `uv sync` re-locks first and can rewrite `uv.lock`).
+- **Genuinely corrupt venv:** delete and rebuild — `rm -rf .venv && uv sync --frozen`. uv
+  recreates it from `uv.lock`.
 - **Wrong interpreter:** the venv hard-codes its Python path. If the pinned version changed
-  (`.python-version`), `rm -rf .venv && uv sync` rebuilds against the correct interpreter.
+  (`.python-version`), `rm -rf .venv && uv sync --frozen` rebuilds against the correct interpreter.
 
 ## Quick reference (corrective cases only)
 
@@ -90,5 +91,5 @@ consistent.
 | Bump everything (deliberate) | `uv lock --upgrade && uv sync` |
 | CI / verify a clone (fail on stale lock) | `uv sync --locked` |
 | Regenerate a stale lock | `uv lock && uv sync` |
-| Restore env to the committed lock | `uv sync` (or `rm -rf .venv && uv sync`) |
+| Restore env to the committed lock | `uv sync --frozen` (or `rm -rf .venv && uv sync --frozen`) |
 | Added a package by accident via pip | undo, then `uv add <pkg>` |

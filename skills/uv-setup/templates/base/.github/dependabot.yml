@@ -1,6 +1,6 @@
 # Automated dependency updates. The `uv` ecosystem understands pyproject.toml
 # and uv.lock natively (GA since March 2025); minor/patch bumps arrive grouped
-# as one weekly PR (CI runs `uv sync --frozen`, so a lock bump that breaks the
+# as one weekly PR (CI runs `uv sync --locked`, so a lock bump that breaks the
 # build fails visibly). GitHub Actions bumps are grouped the same way — that's
 # what keeps the full-version setup-uv pin current (setup-uv stopped
 # publishing moving major tags at v8).

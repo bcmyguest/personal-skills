@@ -107,7 +107,7 @@ jobs:
       - name: Test
         if: steps.bump.outputs.release == 'true'
         run: |
-          uv sync --frozen
+          uv sync --locked
           uv run -m pytest
 
       - name: Render release notes

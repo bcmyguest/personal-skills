@@ -52,9 +52,10 @@ earlier ones — the template pyproject.toml, README.md, and .gitignore
 cp -R "$SKILL/templates/base/." .
 cp -R "$SKILL/templates/package/." "src/<pkg>/"   # mock module + py.typed
 
-# Project type — exactly one pyproject.toml:
+# Project type — run exactly ONE of the following:
 cp "$SKILL/templates/lib/pyproject.toml" .        # library (no console script)
-cp "$SKILL/templates/app/pyproject.toml" .        # application/CLI AND service
+# …or, for an application/CLI or service:
+# cp "$SKILL/templates/app/pyproject.toml" .      # application/CLI AND service
 
 # Service only — in addition to app/pyproject.toml:
 cp "$SKILL/templates/service/Dockerfile" "$SKILL/templates/service/.dockerignore" .
