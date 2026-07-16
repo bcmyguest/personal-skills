@@ -59,8 +59,10 @@ cp "$SKILL/templates/app/pyproject.toml" .        # application/CLI AND service
 # Service only — in addition to app/pyproject.toml:
 cp "$SKILL/templates/service/Dockerfile" "$SKILL/templates/service/.dockerignore" .
 
-# Release automation (skip both lines entirely if "none"):
-cp "$SKILL/templates/release/cliff.toml" .
+# Release automation (skip both lines entirely if "none"; $RS = the
+# installed release-setup skill, a sibling of $SKILL — it owns the canonical
+# cliff.toml and the release doctrine):
+cp "$RS/templates/cliff.toml" .
 cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
 
 # Pre-commit — assembled from the pre-commit-setup skill's shared fragments
@@ -73,9 +75,10 @@ cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
 ```
 
 The pre-commit machinery (install, hook types, merge-into-existing) is the
-**pre-commit-setup** skill's job — follow it with the assembled config. If
-that skill isn't installed alongside this one, fetch its fragments from the
-same repo this skill came from.
+**pre-commit-setup** skill's job — follow it with the assembled config, and
+the release doctrine (commit types → semver, notes, no hand-bumped versions)
+is the **release-setup** skill's. If either isn't installed alongside this
+one, fetch the missing files from the same repo this skill came from.
 
 Release variants — pick one: `release-pypi.yml` if publishing to PyPI
 (tag + GitHub release + OIDC upload), else `release-github.yml` (tag +

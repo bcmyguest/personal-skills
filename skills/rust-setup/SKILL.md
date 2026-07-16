@@ -44,8 +44,10 @@ cp -R "$SKILL/templates/base/." .
 cp -R "$SKILL/templates/cli/." .                 # CLI: Cargo.toml, src/main.rs, tests/cli.rs
 cp "$SKILL/templates/lib/Cargo.toml" .           # library: Cargo.toml only
 
-# Release automation (skip both lines entirely if "none"):
-cp "$SKILL/templates/release/cliff.toml" .
+# Release automation (skip all three lines entirely if "none"; $RS = the
+# installed release-setup skill, a sibling of $SKILL — it owns the canonical
+# cliff.toml and the release doctrine):
+cp "$RS/templates/cliff.toml" .
 mkdir -p .github/workflows
 cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
 
@@ -58,9 +60,10 @@ cp "$SKILL/templates/release/<variant>" .github/workflows/release.yml
 ```
 
 The pre-commit machinery (install, hook types, merge-into-existing) is the
-**pre-commit-setup** skill's job — follow it with the assembled config. If
-that skill isn't installed alongside this one, fetch its fragments from the
-same repo this skill came from.
+**pre-commit-setup** skill's job — follow it with the assembled config, and
+the release doctrine (commit types → semver, notes, no hand-bumped versions)
+is the **release-setup** skill's. If either isn't installed alongside this
+one, fetch the missing files from the same repo this skill came from.
 
 Release variants — pick one:
 

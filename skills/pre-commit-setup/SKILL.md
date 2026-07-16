@@ -33,7 +33,7 @@ header. Fragments shipped here in [`templates/`](templates/):
 - `hygiene.repos.yaml` — the baseline every repo gets.
 - `conventional-commits.repos.yaml` — commit-msg enforcement; include it
   whenever release automation derives versions from commit types (the
-  rust-setup / uv-setup / gitlab-release flows).
+  rust-setup / uv-setup / release-setup flows).
 
 A calling setup skill contributes its own language fragment (e.g.
 `rust-setup/templates/pre-commit-rust.repos.yaml`,

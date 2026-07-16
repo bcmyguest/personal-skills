@@ -20,7 +20,7 @@
     {
       "title": "Release automation",
       "description": "Automated releases from Conventional Commits with git-cliff — GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).",
-      "skills": ["gitlab-release"]
+      "skills": ["release-setup"]
     },
     {
       "title": "Frontend",
