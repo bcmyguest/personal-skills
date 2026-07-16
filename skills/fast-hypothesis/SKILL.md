@@ -1,6 +1,6 @@
 ---
 name: fast-hypothesis
-description: Rapid bug diagnosis—form one hypothesis and test it before exploring further
+description: Rapid bug diagnosis — form one best hypothesis and test it with 1-2 commands before exploring further. Use when the user invokes /fast-hypothesis, asks for a quick diagnosis, or wants a bug looked at without long exploratory command chains; for full reproduce-then-verify discipline on a fix, use reproduce-bug instead.
 ---
 
 # Fast Hypothesis Diagnosis

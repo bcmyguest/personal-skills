@@ -7,14 +7,16 @@ description: Assign reviewers to the user's active GitLab merge requests based o
 
 Assign code owner reviewers to the user's open GitLab merge requests using `glab` and the bundled script.
 
-The script is at: `~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py`
+The script is at `scripts/assign_mr_reviewers.py` **inside this skill's directory** —
+resolve it relative to this SKILL.md (e.g. `~/.claude/skills/assign-mr-reviewers/scripts/…`
+in Claude Code; other agents install skills elsewhere). `$SKILL` below means that directory.
 
 ## Important: How to run the script
 
 The script must be run as a **standalone Bash command** with no piping, chaining, or redirection. This is required for auto-approve permissions to work.
 
-- Run: `python3 ~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py <args>`
-- Do NOT: `python3 ~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py <args> | jq .`
+- Run: `python3 $SKILL/scripts/assign_mr_reviewers.py <args>`
+- Do NOT: `python3 $SKILL/scripts/assign_mr_reviewers.py <args> | jq .`
 
 The script outputs JSON to stdout. Read and parse the output directly from the Bash tool result.
 
@@ -33,19 +35,19 @@ If no open MRs, tell the user and stop.
 ### Step 2: Run the script
 
 ```bash
-python3 ~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py <MR_URL>
+python3 $SKILL/scripts/assign_mr_reviewers.py <MR_URL>
 ```
 
 or:
 
 ```bash
-python3 ~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py <PROJECT_PATH> <MR_IID>
+python3 $SKILL/scripts/assign_mr_reviewers.py <PROJECT_PATH> <MR_IID>
 ```
 
 With exclusions (e.g. people who are away):
 
 ```bash
-python3 ~/.claude/skills/assign-mr-reviewers/scripts/assign_mr_reviewers.py <MR_URL> --exclude nhughes,bsmith
+python3 $SKILL/scripts/assign_mr_reviewers.py <MR_URL> --exclude nhughes,bsmith
 ```
 
 The script does everything in one step:
@@ -56,7 +58,7 @@ The script does everything in one step:
 
 It outputs JSON with: status, project_path, mr_iid, title, author, existing_reviewers, required_approvals, assigned, source, remaining_candidates.
 
-If `status` is `already_has_reviewers`, the MR already has enough reviewers — tell the user and stop (unless they asked to reassign).
+If `status` is `already_has_reviewers`, the MR already has enough reviewers — tell the user and stop (unless they asked to reassign). If `status` is `no_eligible_candidates`, reviewers are needed but everyone was excluded (author, existing reviewers, `--exclude`) — tell the user who was ruled out and why.
 
 ### Step 3: Report
 

@@ -273,7 +273,10 @@ def main():
     }
 
     if not picks:
-        output["status"] = "already_has_reviewers"
+        needed = required - len(details["reviewers"])
+        output["status"] = (
+            "already_has_reviewers" if needed <= 0 else "no_eligible_candidates"
+        )
         output["assigned"] = []
         print(json.dumps(output, indent=2))
         return

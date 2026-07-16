@@ -1,6 +1,6 @@
 {
   "skill_name": "security-audit",
-  "fixture": "/home/bguest/personal-skills/skills/_fixtures/vuln-app",
+  "fixture": "skills/_fixtures/vuln-app",
   "ground_truth": {
     "security_plants": [
       {"id": "S1", "issue": "SQL injection", "where": "app/views.py search_products", "severity": "critical", "note": "raw string concat of ?q into SQL, unauthenticated (routed at products/search)"},
@@ -20,7 +20,7 @@
     {
       "id": 0,
       "name": "top-vulnerabilities-default-target",
-      "prompt": "Do a ruthless security audit of the Django app at /home/bguest/personal-skills/skills/_fixtures/vuln-app. Find the worst vulnerabilities and prove each one. Do not change your working directory.",
+      "prompt": "Do a ruthless security audit of the Django app at skills/_fixtures/vuln-app. Find the worst vulnerabilities and prove each one. Do not change your working directory.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
@@ -34,7 +34,7 @@
     {
       "id": 1,
       "name": "decoy-trap-reachability",
-      "prompt": "Review /home/bguest/personal-skills/skills/_fixtures/vuln-app before we ship it and flag the security issues that are actually exploitable. I keep getting scanner reports full of false positives, so only tell me about things a real attacker can actually reach and trigger. Stay in the current directory.",
+      "prompt": "Review skills/_fixtures/vuln-app before we ship it and flag the security issues that are actually exploitable. I keep getting scanner reports full of false positives, so only tell me about things a real attacker can actually reach and trigger. Stay in the current directory.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings (respects the stop-early cap)"},
@@ -46,7 +46,7 @@
     {
       "id": 2,
       "name": "dependency-cve-flavored",
-      "prompt": "Audit /home/bguest/personal-skills/skills/_fixtures/vuln-app for security problems — I'm especially worried our pinned dependencies have known CVEs. Report the top few with proof. Don't cd anywhere.",
+      "prompt": "Audit skills/_fixtures/vuln-app for security problems — I'm especially worried our pinned dependencies have known CVEs. Report the top few with proof. Don't cd anywhere.",
       "files": [],
       "assertions": [
         {"text": "Reports between 1 and 3 confirmed findings"},
