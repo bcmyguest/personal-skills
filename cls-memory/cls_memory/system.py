@@ -86,7 +86,19 @@ class OrganizationalMemory:
             self.store,
             gate=self.gate,
             config=self.config.consolidation,
+            reencode_key=self._reencode_key,
         )
+
+    def _reencode_key(self, record: MemoryRecord) -> Tensor:
+        """Recompute a record's hippocampal key from its stored embedding.
+
+        Used after consolidation trains the cortex. For SEPARATED/EMBEDDING
+        keys this is a no-op in effect (they do not depend on the cortex); for
+        LATENT keys it is what stops training from destroying the memory.
+        """
+        latent = self.cortex.latent(record.embedding)
+        record.latent = latent
+        return self.key_encoder(record.embedding, latent)
 
     # ------------------------------------------------------------- lifecycle
 

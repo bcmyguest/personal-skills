@@ -15,11 +15,20 @@ M = max_i ||x_i||
 
 Energy (Ramsauer eq. 4, with a prior):
 
-    E(xi) = -beta^-1 * logsumexp_i( beta * x_i . xi + log w_i )
+    E(xi) = -beta^-1 * logsumexp_i( beta * x_i . xi - beta * ||x_i||^2 / 2
+                                    + log w_i )
             + 0.5 * xi . xi
-            + 0.5 * M^2
 
-With uniform w_i = 1/N this reduces exactly to Ramsauer's
+The per-pattern -beta*||x_i||^2/2 inside the logsumexp replaces the global
++0.5*M^2 term of the paper. For unit-norm patterns the two are identical: a
+constant inside logsumexp factors straight out, and -(-beta/2)/beta = +0.5 =
+0.5*M^2. For patterns that are *not* unit-norm they differ, and the per-pattern
+form is the correct one -- it is what makes exp(-beta*E) the Gaussian mixture
+centred on the patterns rather than a norm-tilted version of it, so the score,
+the Tweedie denoiser and log_density stay mutually consistent at any pattern
+scale. See energy.py; consolidation deliberately runs unnormalised.
+
+With uniform w_i = 1/N and unit-norm patterns this reduces exactly to Ramsauer's
 
     E(xi) = -lse(beta, X xi) + 0.5 xi.xi + beta^-1 log N + 0.5 M^2
 
@@ -153,15 +162,19 @@ class ModernHopfieldNetwork(torch.nn.Module):
         return float(self.config.beta if beta is None else beta)
 
     def logits(self, xi: Tensor, beta: float | None = None) -> Tensor:
-        """beta * X xi + log w, with log w renormalised to a proper prior.
+        """beta*(X xi - ||x_i||^2/2) + log w, with log w a normalised prior.
 
-        Renormalising (subtracting logsumexp of the priors) is what makes the
+        Renormalising the prior (subtracting its logsumexp) is what makes the
         uniform case reproduce Ramsauer's `beta^-1 log N` term exactly, and it
         keeps the energy comparable across different memory-set sizes.
+
+        The -||x_i||^2/2 term is a no-op for unit-norm patterns and is what
+        keeps the diffusion identities exact when they are not normalised.
         """
         beta = self._beta(beta)
         prior = self.log_prior - torch.logsumexp(self.log_prior, dim=0)
-        return beta * (xi @ self.patterns.T) + prior
+        half_sq = 0.5 * (self.patterns * self.patterns).sum(-1)
+        return beta * (xi @ self.patterns.T - half_sq) + prior
 
     def attention(self, xi: Tensor, beta: float | None = None) -> Tensor:
         """softmax over stored patterns -- the association strengths."""
@@ -179,11 +192,10 @@ class ModernHopfieldNetwork(torch.nn.Module):
     def energy(self, xi: Tensor, beta: float | None = None) -> Tensor:
         """E(xi) from the module docstring. Lower = deeper basin."""
         if self.is_empty:
-            return torch.zeros(xi.shape[:-1])
+            raise RuntimeError("energy is undefined for an empty hippocampus")
         beta = self._beta(beta)
         lse = torch.logsumexp(self.logits(xi, beta), dim=-1) / beta
-        max_sq = float((self.patterns.norm(dim=-1) ** 2).max())
-        return -lse + 0.5 * (xi * xi).sum(-1) + 0.5 * max_sq
+        return -lse + 0.5 * (xi * xi).sum(-1)
 
     def grad_energy(self, xi: Tensor, beta: float | None = None) -> Tensor:
         """Analytic gradient: dE/dxi = xi - X^T softmax(...).
@@ -195,16 +207,39 @@ class ModernHopfieldNetwork(torch.nn.Module):
     def separation(self, index: int) -> float:
         """Delta_i = x_i.x_i - max_{j != i} x_i.x_j.
 
-        Ramsauer's separation. Retrieval error for pattern i is exponentially
-        small in beta * Delta_i, so a small Delta flags a memory at risk of
-        being absorbed into a mixture with a near-duplicate neighbour.
+        Ramsauer's separation, computed exactly as the paper defines it. The
+        paper's guarantee -- retrieval error for pattern i exponentially small
+        in beta*Delta_i -- assumes a *uniform* prior, so it does NOT transfer
+        to this network once salience varies. Use `effective_separation` for a
+        diagnostic that accounts for the prior.
         """
+        if not 0 <= index < len(self):
+            raise IndexError(f"pattern index {index} out of range for {len(self)}")
         if len(self) < 2:
             return float("inf")
         sims = self.patterns[index] @ self.patterns.T
         self_sim = float(sims[index])
         others = torch.cat([sims[:index], sims[index + 1 :]])
         return self_sim - float(others.max())
+
+    def effective_separation(self, index: int, beta: float | None = None) -> float:
+        """Separation including the salience prior.
+
+            Delta_i + (log w_i - max_{j != i} log w_j) / beta
+
+        This is the quantity that actually governs whether pattern i is a fixed
+        point of *this* network. A decayed memory can be geometrically well
+        separated and still lose retrieval to a fresher neighbour, which the
+        raw `separation` would not reveal.
+        """
+        if not 0 <= index < len(self):
+            raise IndexError(f"pattern index {index} out of range for {len(self)}")
+        if len(self) < 2:
+            return float("inf")
+        beta = self._beta(beta)
+        lp = self.log_prior
+        others = torch.cat([lp[:index], lp[index + 1 :]])
+        return self.separation(index) + (float(lp[index]) - float(others.max())) / beta
 
     # ------------------------------------------------------------- retrieval
 

@@ -95,24 +95,31 @@ class SlowLearningNeocortex(nn.Module):
     def surprise(self, x: Tensor, mode: str = "recon") -> Tensor:
         """Per-sample novelty score. Deterministic (uses mu, not a sample), so
         the same input always yields the same gate decision."""
+        was_training = self.training
         self.eval()
         if x.dim() == 1:
             x = x.unsqueeze(0)
         recon, kl = self.losses(x, sample=False)
+        self.train(was_training)
         if mode == "recon":
             return recon
         if mode == "elbo":
-            return recon + self.config.kl_weight * kl
+            # Weight 1.0, not kl_weight: the bound on -log p(x) requires the
+            # full KL. kl_weight is a *training* knob; reusing it here would
+            # make "elbo" a beta-VAE objective and not a bound at all.
+            return recon + kl
         raise ValueError(f"unknown novelty mode: {mode!r}")
 
     @torch.no_grad()
     def latent(self, x: Tensor) -> Tensor:
         """Deterministic latent code (the posterior mean)."""
+        was_training = self.training
         self.eval()
         squeeze = x.dim() == 1
         if squeeze:
             x = x.unsqueeze(0)
         mu, _ = self.encode(x)
+        self.train(was_training)
         return mu.squeeze(0) if squeeze else mu
 
     # -------------------------------------------------------------- training

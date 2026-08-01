@@ -140,6 +140,11 @@ class ConsolidationConfig:
     interleave_ratio: float = 0.5
     """Fraction of each consolidation batch drawn from replay rather than new
     data. Interleaving is what prevents catastrophic forgetting in CLS."""
+    relative_drop: float = 0.5
+    """Prune a memory once the cortex reconstructs it at less than this
+    fraction of its surprise at ingestion. A relative test, because an absolute
+    quantile threshold drifts with the ingestion stream and fires without any
+    consolidation having happened."""
     prune_predicted: bool = True
     """After consolidation, drop episodic memories the cortex now reconstructs
     below threshold -- the hippocampal trace has been absorbed by the schema."""

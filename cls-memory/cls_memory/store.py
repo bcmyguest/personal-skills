@@ -81,10 +81,35 @@ class MemoryStore:
 
     def add(self, record: MemoryRecord, *, now: datetime | None = None) -> MemoryRecord:
         """Single-shot write into the hippocampus."""
+        if record.id in self._index:
+            raise ValueError(f"record id {record.id} is already stored")
+        if record.key.shape[-1] != self.mhn.dim:
+            raise ValueError(
+                f"key dim {record.key.shape[-1]} != hippocampal dim {self.mhn.dim}"
+            )
         self.mhn.write(record.key, self._log_prior(record, now))
+        # The network normalises on write; mirror that back onto the record so
+        # `keys()` and `mhn.patterns` cannot drift apart.
+        record.key = self.mhn.patterns[-1].clone()
         self._index[record.id] = len(self._records)
         self._records.append(record)
         return record
+
+    def reindex(self, key_of) -> None:
+        """Recompute every stored key and rebuild the pattern matrix.
+
+        Required after anything that changes the encoder -- notably training
+        the cortex, which silently invalidates latent-derived keys. `key_of`
+        takes a MemoryRecord and returns its new key.
+        """
+        if not self._records:
+            return
+        keys = torch.stack([key_of(r) for r in self._records])
+        priors = self.mhn.log_prior.clone()
+        self.mhn.remove(torch.arange(len(self._records)))
+        self.mhn.write(keys, priors)
+        for row, record in enumerate(self._records):
+            record.key = self.mhn.patterns[row].clone()
 
     def remove(self, record_ids: Iterable[str]) -> list[str]:
         """Forget records by id. Returns the ids actually removed."""

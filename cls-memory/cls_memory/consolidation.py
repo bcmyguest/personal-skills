@@ -61,11 +61,15 @@ class ConsolidationEngine:
         *,
         gate: NoveltyGate | None = None,
         config: ConsolidationConfig | None = None,
+        reencode_key=None,
     ) -> None:
         self.cortex = cortex
         self.store = store
         self.gate = gate
         self.config = config or ConsolidationConfig()
+        self.reencode_key = reencode_key
+        """Callable(MemoryRecord) -> key, used to re-index after training. Must
+        be supplied whenever the key depends on the cortex."""
 
     # ---------------------------------------------------------------- replay
 
@@ -154,6 +158,13 @@ class ConsolidationEngine:
         with torch.no_grad():
             loss_after = float(self.cortex.elbo_loss(batch)[0])
 
+        # Training moved the encoder, so every latent-derived key is now stale.
+        # Without this the read path would encode queries with the new cortex
+        # while the hippocampus still held old-cortex keys (measured cosine
+        # 0.39 for the same text across one consolidation pass).
+        if self.reencode_key is not None:
+            self.store.reindex(self.reencode_key)
+
         pruned = self.prune_predicted(now=now) if c.prune_predicted else []
         sweep = self.store.sweep(now)
 
@@ -171,34 +182,46 @@ class ConsolidationEngine:
     # ----------------------------------------------------------------- prune
 
     def prune_predicted(
-        self, *, threshold: float | None = None, now: datetime | None = None
+        self,
+        *,
+        threshold: float | None = None,
+        now: datetime | None = None,
+        mode: str | None = None,
     ) -> list[str]:
-        """Drop episodic memories the cortex now reconstructs below threshold.
+        """Drop episodic memories the cortex has demonstrably absorbed.
 
         This is the closing of the loop: the hippocampus is a staging area, and
-        anything the schema has absorbed should not keep occupying it. Without
-        this step the fast store grows without bound and its attractors blur
-        together (see ModernHopfieldNetwork.separation).
+        anything the schema has learned should not keep occupying it.
+
+        The criterion is a *relative drop* against the item's surprise at
+        ingestion: prune when `surprise_now < relative_drop * novelty_at_write`.
+        It deliberately does NOT default to the novelty gate's threshold. That
+        threshold is a quantile of the live ingestion window, which drifts
+        upward as new items arrive, so comparing against it prunes memories on
+        pure quantile drift -- measured removing 1 of 4 memories on a system
+        whose cortex had not been trained at all since those memories were
+        written. A relative drop can only fire if this cortex actually improved
+        on this item.
+
+        Pass an absolute `threshold` to override (still combined with the
+        relative test, so an unchanged cortex cannot trigger a prune).
         """
         if len(self.store) == 0:
             return []
 
-        if threshold is None:
-            if self.gate is None:
-                raise ValueError("pass a threshold or construct with a NoveltyGate")
-            threshold = self.gate.threshold
-        if threshold == float("-inf"):
-            return []  # gate still in warmup; nothing is reliably predictable yet
-
-        mode = self.gate.config.mode if self.gate else "recon"
+        mode = mode or (self.gate.config.mode if self.gate else "recon")
         embeddings = self.store.embeddings()
         scores = self.cortex.surprise(embeddings, mode)
 
-        doomed = [
-            r.id
-            for r, s in zip(self.store.records, scores.tolist())
-            if s <= threshold and not (r.is_evergreen and self.config.protect_evergreen)
-        ]
+        doomed = []
+        for record, s in zip(self.store.records, scores.tolist()):
+            if record.is_evergreen and self.config.protect_evergreen:
+                continue
+            learned = record.novelty > 0 and s < self.config.relative_drop * record.novelty
+            if threshold is not None:
+                learned = learned and s <= threshold
+            if learned:
+                doomed.append(record.id)
         removed = self.store.remove(doomed)
         self.store.refresh_priors(now)
         return removed

@@ -12,9 +12,10 @@ Substituting E from `hippocampus` and using beta*x_i.xi - beta/2*||xi||^2 =
     exp(-beta E(xi)) ∝ sum_i w_i * exp(-beta/2 * ||xi - x_i||^2)
                                   * exp(beta/2 * (||x_i||^2 - M^2))
 
-When patterns are unit-normalised the trailing factor is a constant, and the
-Gibbs measure of the MHN is *exactly* a Gaussian mixture centred on the stored
-memories:
+Because `hippocampus` folds -beta*||x_i||^2/2 into the logits, that trailing
+factor is absorbed exactly -- at *any* pattern scale, not only for unit-norm
+patterns -- and the Gibbs measure of the MHN is exactly a Gaussian mixture
+centred on the stored memories:
 
     p(xi) = sum_i w_i * N(xi; x_i, sigma^2 I),      sigma^2 = 1 / beta
 
@@ -103,8 +104,10 @@ def log_density(
     log p = logsumexp_i( log w_i - ||xi - x_i||^2 / (2 sigma^2) )
             - (d/2) log(2 pi sigma^2)
 
-    Valid as written when patterns are unit-normalised; otherwise it differs
-    from the true density by the per-pattern norm factors documented above.
+    Exact at any pattern scale: the per-pattern norm term in the Hopfield
+    logits makes `exp(-beta*E)` proportional to this same mixture, so
+    `log_density`, `score`, `denoise` and `energy` all describe one consistent
+    distribution whether or not patterns are normalised.
     """
     if mhn.is_empty:
         raise RuntimeError("log_density undefined for an empty memory")
@@ -124,34 +127,75 @@ class BasinReport:
     energy: float
     nearest_energy: float
     depth: float
-    """energy - nearest_energy, in units of the energy function. >0 always;
-    small means the cue is inside a genuine basin."""
+    """energy - nearest_energy, in units of the energy function.
+
+    NOT guaranteed positive. Stored patterns are not global minima of E: a
+    metastable point between two close memories can sit slightly *below* every
+    stored pattern's energy (measured -0.004 for a midpoint at beta=2). Small
+    magnitude means the cue is inside a genuine basin; large positive means it
+    is outside all of them."""
+    depth_nats: float
+    """beta * depth. Since -beta*E is the log-density up to a constant, this is
+    the drop in log-density from the nearest memory, measured in nats -- which
+    is scale-free, unlike `depth` itself (which carries units of 1/beta)."""
     log_density: float
     top_similarity: float
     nearest_index: int
+    max_depth_nats: float = 8.0
+    min_similarity: float = 0.30
 
     @property
     def is_confabulation(self) -> bool:
         """Heuristic: the cue is far outside every stored basin, so a returned
-        'memory' is an interpolation the organisation never actually recorded."""
-        return self.depth > 0.5 or self.top_similarity < 0.3
+        'memory' is an interpolation the organisation never actually recorded.
+
+        Thresholded in nats rather than raw energy, so a cutoff means the same
+        thing at any beta (n nats = an e^n drop in density from the nearest
+        memory). The *cutoff itself is still not portable* and must be
+        calibrated per deployment: measured on the demo config, a legitimate
+        partial-text cue sits at 9.1 nats / 0.41 cosine while a nonsense query
+        sits at 9.8 nats / 0.35 -- the ranking separates them cleanly, the
+        absolute values barely do. Calibrate by running known-good cues through
+        `basin_depth` and taking an upper quantile of `depth_nats`.
+
+        Prefer comparing `depth_nats` across queries over trusting this flag.
+        """
+        return self.depth_nats > self.max_depth_nats or (
+            self.top_similarity < self.min_similarity
+        )
 
 
 def basin_depth(
-    mhn: ModernHopfieldNetwork, xi: Tensor, beta: float | None = None
+    mhn: ModernHopfieldNetwork,
+    xi: Tensor,
+    beta: float | None = None,
+    *,
+    max_depth_nats: float = 8.0,
+    min_similarity: float = 0.30,
 ) -> BasinReport:
-    """How well does the memory landscape actually explain this query?"""
+    """How well does the memory landscape actually explain this query?
+
+    Single query only (shape (d,)); loop for batches.
+    """
+    if mhn.is_empty:
+        raise RuntimeError("basin_depth is undefined for an empty hippocampus")
+    if xi.dim() != 1:
+        raise ValueError("basin_depth expects a single query of shape (d,)")
     sims = xi @ mhn.patterns.T
     idx = int(sims.argmax())
     e_query = float(mhn.energy(xi, beta))
     e_near = float(mhn.energy(mhn.patterns[idx], beta))
+    depth = e_query - e_near
     return BasinReport(
         energy=e_query,
         nearest_energy=e_near,
-        depth=e_query - e_near,
+        depth=depth,
+        depth_nats=mhn._beta(beta) * depth,
         log_density=float(log_density(mhn, xi, beta)),
         top_similarity=float(sims[idx]),
         nearest_index=idx,
+        max_depth_nats=max_depth_nats,
+        min_similarity=min_similarity,
     )
 
 
@@ -164,9 +208,10 @@ def langevin_replay(
     step_size: float = 0.05,
     beta: float | None = None,
     init: Tensor | None = None,
+    init_noise: float = 0.1,
     generator: torch.Generator | None = None,
 ) -> Tensor:
-    """Sample the memory distribution by annealed Langevin dynamics.
+    """Sample the memory distribution by unadjusted Langevin dynamics (ULA).
 
         xi <- xi + (eta/2) * score(xi) + sqrt(eta) * z,   z ~ N(0, I)
 
@@ -182,12 +227,20 @@ def langevin_replay(
         probs = torch.softmax(mhn.log_prior, dim=0)
         idx = torch.multinomial(probs, n_samples, replacement=True, generator=generator)
         xi = mhn.patterns[idx].clone()
-        sigma = beta_to_sigma(mhn._beta(beta))
-        xi = xi + sigma * torch.randn(xi.shape, generator=generator)
+        # Seed noise is scaled by init_noise, not the full sigma = 1/sqrt(beta):
+        # an isotropic Gaussian of radius sigma*sqrt(d) is far wider than the
+        # spacing between memories in high dimension, which would wash the
+        # salience-weighted seeding out into noise around the centroid.
+        sigma = beta_to_sigma(mhn._beta(beta)) * init_noise
+        xi = xi + sigma * torch.randn(
+            xi.shape, generator=generator, dtype=xi.dtype, device=xi.device
+        )
     else:
         xi = init.clone()
 
     for _ in range(steps):
-        noise = torch.randn(xi.shape, generator=generator)
+        noise = torch.randn(
+            xi.shape, generator=generator, dtype=xi.dtype, device=xi.device
+        )
         xi = xi + 0.5 * step_size * score(mhn, xi, beta) + math.sqrt(step_size) * noise
     return xi

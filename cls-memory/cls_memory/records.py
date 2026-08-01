@@ -1,8 +1,8 @@
 """Memory records and the evergreen / temporal distinction.
 
-The salience of a record is a scalar in (0, 1] that gates how strongly it
-competes during retrieval. Episodic records decay exponentially; evergreen
-records do not decay at all.
+The salience of a record is a scalar in (0, max_strength] that gates how
+strongly it competes during retrieval. Episodic records decay exponentially;
+evergreen records sit permanently at the ceiling.
 
 Salience enters the Hopfield retrieval as a log-prior on the softmax logits
 (see hippocampus.ModernHopfieldNetwork), which is equivalent to giving the
@@ -70,7 +70,9 @@ class MemoryRecord:
 
     def __post_init__(self) -> None:
         if self.key is None:
-            self.key = self.latent
+            # clone, or the key would alias the latent and mutating one would
+            # silently corrupt the other
+            self.key = self.latent.clone()
 
     @property
     def is_evergreen(self) -> bool:
@@ -91,7 +93,8 @@ class MemoryRecord:
     ) -> float:
         """Current retrieval weight.
 
-        Evergreen:  w = 1
+        Evergreen:  w = max_strength   (the ceiling, so no amount of recall
+                                        lets an episode outrank a business rule)
         Temporal:   w = clamp(strength) * 2 ** (-age_days / half_life)
 
         The exponential form is the standard Ebbinghaus forgetting curve; the
@@ -99,7 +102,7 @@ class MemoryRecord:
         a memory's competitive weight every 30 days.
         """
         if self.is_evergreen:
-            return 1.0
+            return max_strength
         age = self.age_days(now, from_reinforcement=from_reinforcement)
         decay = math.pow(2.0, -age / max(half_life_days, 1e-9))
         return min(self.strength, max_strength) * decay

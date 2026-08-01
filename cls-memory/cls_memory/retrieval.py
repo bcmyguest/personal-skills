@@ -138,6 +138,27 @@ class PatternCompleter:
             for w, i in zip(weights, idx)
         ]
 
+        # Basin is measured BEFORE reinforcement, so the trace and the basin
+        # describe the same prior vector.
+        #
+        # Which point to measure at depends on the cue type:
+        #   free cue   -> the CUE. The settled state is inside a basin by
+        #                 construction (it is a softmax average of stored
+        #                 patterns), so measuring there reports depth ~0 for
+        #                 every query, including nonsense.
+        #   masked cue -> the SETTLED STATE. A deliberately occluded cue is far
+        #                 from every memory by construction, so measuring there
+        #                 flags perfect completions as confabulations. The
+        #                 settled state is still a real test here because the
+        #                 known coordinates stay clamped, so it cannot simply
+        #                 fall into the nearest basin.
+        # Either way the point is normalised: a masked cue has norm
+        # ~sqrt(keep_fraction), which would otherwise depress top_similarity.
+        basin_point = trace.state if mask is not None else cue
+        basin = basin_depth(
+            mhn, basin_point / basin_point.norm().clamp_min(1e-12), beta
+        )
+
         if reinforce and results:
             # Reconsolidation: recall makes the winning memory more durable.
             results[0].record.reinforce(
@@ -155,7 +176,7 @@ class PatternCompleter:
             # Measured at the cue, not the settled state: after settling the
             # state is inside a basin by construction, which would report
             # depth 0 for every query including nonsense ones.
-            basin=basin_depth(mhn, cue, beta),
+            basin=basin,
             beta=mhn._beta(beta),
         )
 
@@ -222,9 +243,27 @@ class PatternCompleter:
         keep = torch.rand(key.shape, generator=g) < keep_fraction
         return key * keep, keep
 
-    def gist(self, query: str, *, top_k: int = 5, factor: float = 0.15, **kwargs) -> RecallResult:
+    def gist(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        factor: float = 0.15,
+        reinforce: bool = False,
+        **kwargs,
+    ) -> RecallResult:
         """Deliberately low-beta recall: settle into a metastable mixture that
-        summarises a family of related memories instead of one episode."""
+        summarises a family of related memories instead of one episode.
+
+        `reinforce` defaults to False here, unlike `recall`: a schema-level read
+        settles on a mixture, so whichever memory happens to top it is an
+        artefact of the blend, not a memory the user actually recalled. Bumping
+        its strength and resetting its decay clock would be wrong.
+        """
         return self.recall(
-            query, top_k=top_k, beta=self.store.mhn.config.beta * factor, **kwargs
+            query,
+            top_k=top_k,
+            beta=self.store.mhn.config.beta * factor,
+            reinforce=reinforce,
+            **kwargs,
         )

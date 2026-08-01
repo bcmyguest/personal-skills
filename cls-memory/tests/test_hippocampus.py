@@ -74,7 +74,10 @@ def test_low_beta_produces_a_metastable_mixture():
     xi = net.patterns[0].clone()
     trace = net.retrieve(xi)
     assert trace.is_mixture
-    assert float(trace.weights.max()) < 0.5
+    # the substantive claim is that the mixture is genuinely broad, not merely
+    # under the is_mixture cutoff: mass should be spread over many memories
+    assert float(trace.weights.max()) < 2.0 / len(net)
+    assert int((trace.weights > 0.01).sum()) > len(net) // 2
 
 
 def test_masked_retrieval_clamps_known_coordinates():
@@ -86,6 +89,8 @@ def test_masked_retrieval_clamps_known_coordinates():
     trace = net.retrieve(cue, mask=mask)
     assert torch.allclose(trace.state[mask], cue[mask], atol=1e-6)
     assert int(trace.weights.argmax()) == 2
+    # the free half must actually be reconstructed, not left at its zero init
+    assert torch.allclose(trace.state[~mask], target[~mask], atol=1e-3)
 
 
 def test_partial_cue_completes_the_missing_half():
@@ -99,7 +104,11 @@ def test_partial_cue_completes_the_missing_half():
     completed = trace.state[~mask]
     truth = target[~mask]
     cos = float(torch.nn.functional.cosine_similarity(completed, truth, dim=0))
-    assert cos > 0.8, f"completion cosine only {cos}"
+    # 0.99, not 0.8: returning the global pattern mean instead of the memory
+    # scores ~0.35 here, so a loose bound would not distinguish "settled on the
+    # right attractor" from "settled on a nearby mixture".
+    assert cos > 0.99, f"completion cosine only {cos}"
+    assert int(trace.weights.argmax()) == 5
 
 
 def test_log_prior_biases_retrieval():

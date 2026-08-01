@@ -81,7 +81,21 @@ def _record(persistence: Persistence) -> MemoryRecord:
 def test_evergreen_never_decays():
     r = _record(Persistence.EVERGREEN)
     r.age_by(3650)
-    assert r.salience(half_life_days=30.0) == 1.0
+    assert r.salience(half_life_days=30.0, max_strength=3.0) == 3.0
+
+
+def test_evergreen_sits_at_the_ceiling_no_episode_can_reach():
+    """Evergreen salience is max_strength, not 1.0, so a heavily reinforced
+    episode cannot outrank a business rule -- reinforcement caps at the same
+    ceiling and any decay at all puts it strictly below."""
+    rule = _record(Persistence.EVERGREEN)
+    episode = _record(Persistence.TEMPORAL)
+    for _ in range(20):
+        episode.reinforce(gain=0.25, max_strength=3.0)
+    episode.age_by(1)
+    assert episode.salience(half_life_days=30.0, max_strength=3.0) < rule.salience(
+        half_life_days=30.0, max_strength=3.0
+    )
 
 
 def test_temporal_halves_every_half_life():
@@ -136,7 +150,8 @@ def test_decayed_memory_loses_to_a_fresh_one(trained):
     assert old is not None and new is not None
 
     old.age_by(365)
-    system.store.refresh_priors()
+    # deliberately NOT calling refresh_priors(): the read path must apply decay
+    # lazily on its own, which is the documented behaviour
     result = system.recall("payments gateway timeout", reinforce=False)
     assert result.top is not None
     assert result.top.record.id == new.id
@@ -150,7 +165,6 @@ def test_evergreen_outranks_an_equally_similar_stale_episode():
     assert rule is not None and episode is not None
 
     episode.age_by(300)
-    system.store.refresh_priors()
     result = system.recall("refunds above 500 dollars director", reinforce=False)
     assert result.top is not None
     assert result.top.record.id == rule.id
@@ -320,15 +334,28 @@ def test_low_beta_recall_returns_a_gist():
 
 
 def test_basin_depth_flags_an_out_of_distribution_query():
+    """Several memories, so the comparison is informative: with only one stored
+    pattern every softmax weight is 1.0 and both confidences are exactly 0.5."""
     system = make_system()
     system.bootstrap(CORPUS)
-    system.log_event("the shard rebalancer corrupted the orders index")
+    for text in [
+        "the shard rebalancer corrupted the orders index",
+        "a contractor deleted the staging kubernetes namespace",
+        "the payment provider rotated credentials without notice",
+        "an unfamiliar vendor invoice from a shell company in belize",
+    ]:
+        system.log_event(text)
+
     near = system.recall("shard rebalancer orders index", reinforce=False)
     far = system.recall(
         "quantum chromodynamics lattice gauge simulation", reinforce=False
     )
+    # Ranking is the reliable signal; the absolute cutoff is deployment
+    # specific (see BasinReport.is_confabulation), so this asserts the ordering
+    # on both components rather than the flag.
     assert far.basin.depth > near.basin.depth
-    assert far.confidence <= near.confidence
+    assert far.basin.depth_nats > near.basin.depth_nats
+    assert far.basin.top_similarity < near.basin.top_similarity
 
 
 def test_recall_on_empty_memory_raises():
@@ -363,32 +390,67 @@ def test_consolidation_lowers_loss_on_its_own_batch():
 
 def test_consolidation_prunes_what_the_cortex_learns():
     """The whole point of the loop: once the schema absorbs an episode, the
-    hippocampal trace should be released."""
+    hippocampal trace should be released.
+
+    Uses the relative-drop criterion rather than threshold=inf, which would
+    prune unconditionally and so test nothing about learning.
+    """
     system = make_system()
     system.bootstrap(CORPUS)
     novel = "the shard rebalancer corrupted the orders index during failover"
     stored = system.log_event(novel).record
     assert stored is not None
+    before = float(system.cortex.surprise(stored.embedding)[0])
 
     # Overtrain the cortex on that exact item so it becomes highly predictable.
     x = system.embedder.encode([novel] * 32)
     system.cortex.fit(x, epochs=200, lr=3e-3)
+    after = float(system.cortex.surprise(stored.embedding)[0])
+    assert after < before, "setup failed: the cortex did not learn the item"
 
-    pruned = system.consolidation.prune_predicted(threshold=float("inf"))
+    pruned = system.consolidation.prune_predicted()
     assert stored.id in pruned
     assert len(system) == 0
 
 
-def test_consolidation_protects_evergreen_records():
+def test_prune_does_not_fire_without_consolidation():
+    """Regression guard: pruning must require evidence that *this* cortex
+    improved on the item. Thresholding against the live gate quantile used to
+    delete memories on pure quantile drift, with the cortex untouched."""
     system = make_system()
     system.bootstrap(CORPUS)
-    rule = system.remember_rule("all refunds above 500 dollars need director approval").record
-    episode = system.log_event("a refund of 800 dollars was approved on tuesday").record
+    for text in [
+        "the shard rebalancer corrupted the orders index",
+        "a contractor deleted the staging kubernetes namespace",
+        "the payment provider rotated credentials without notice",
+        "an unfamiliar vendor invoice from a shell company in belize",
+    ]:
+        system.log_event(text)
+    assert len(system) > 0
+
+    before = len(system)
+    assert system.consolidation.prune_predicted() == []
+    assert len(system) == before
+
+
+def test_consolidation_protects_evergreen_records():
+    """Evergreen records are exempt even when the cortex has plainly learned
+    them. Both records are overtrained so the relative-drop criterion fires for
+    the episode; only the rule's exemption keeps it alive."""
+    system = make_system()
+    system.bootstrap(CORPUS)
+    rule_text = "all refunds above 500 dollars need director approval"
+    episode_text = "a refund of 800 dollars was approved on tuesday"
+    rule = system.remember_rule(rule_text).record
+    episode = system.log_event(episode_text).record
     assert rule is not None and episode is not None
 
-    pruned = system.consolidation.prune_predicted(threshold=float("inf"))
+    x = system.embedder.encode([rule_text, episode_text] * 16)
+    system.cortex.fit(x, epochs=200, lr=3e-3)
+
+    pruned = system.consolidation.prune_predicted()
+    assert episode.id in pruned, "setup failed: episode was not learned"
     assert rule.id not in pruned
-    assert episode.id in pruned
 
 
 def test_interleaved_replay_resists_catastrophic_forgetting():

@@ -24,12 +24,17 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-58 tests pass. `examples/demo.py` runs the full lifecycle end to end. Everything
-below labelled "measured" was measured in this repo, not assumed.
+82 tests pass. `examples/demo.py` runs the full lifecycle end to end, and
+`experiments/benchmark.py` trains and evaluates the system on a labelled
+synthetic corpus — results in [RESULTS.md](RESULTS.md). Everything below
+labelled "measured" was measured in this repo, not assumed.
+
+The package has been through an adversarial review; the defects it found and
+the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 58 passed
+uv run pytest                       # 82 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -88,11 +93,15 @@ per-pattern log-prior added so salience can modulate retrieval:
 **Energy**
 
 ```
-E(ξ) = −β⁻¹ logsumexp_i( β·xᵢ·ξ + log wᵢ ) + ½‖ξ‖² + ½M²
+E(ξ) = −β⁻¹ logsumexp_i( β·xᵢ·ξ − β‖xᵢ‖²/2 + log wᵢ ) + ½‖ξ‖²
 ```
 
-With uniform wᵢ = 1/N this reduces exactly to the paper's eq. 4 — asserted in
-`test_uniform_prior_matches_ramsauer_energy`.
+With uniform wᵢ = 1/N and unit-norm patterns this reduces exactly to the paper's
+eq. 4 — asserted in `test_uniform_prior_matches_ramsauer_energy`. The
+per-pattern −β‖xᵢ‖²/2 replaces the paper's global +½M²; the two are identical
+for unit-norm patterns (a constant factors out of the logsumexp) but only the
+per-pattern form keeps `exp(−βE)` equal to the *untilted* Gaussian mixture when
+patterns are not normalised — which is the configuration consolidation runs in.
 
 **Update** (CCCP, monotonically non-increasing energy)
 
@@ -105,9 +114,12 @@ pattern vector. Rescaling would distort the attractor geometry and corrupt the
 energy; a log-prior is exactly a mixing weight in the Gaussian mixture the
 network encodes (§6), which is the mathematically clean place to put it.
 
-Also exposed: `separation(i)` = Δᵢ, Ramsauer's separation bound — retrieval
-error is exponentially small in β·Δᵢ, so a small Δ flags a memory at risk of
-fusing with a near neighbour.
+Also exposed: `separation(i)` = Δᵢ, Ramsauer's separation. **Its exponential
+error bound assumes a uniform prior and therefore does not transfer to this
+network** — a decayed memory can be geometrically well separated and still lose
+retrieval. Use `effective_separation(i)` = Δᵢ + (log wᵢ − max_{j≠i} log wⱼ)/β,
+which is the quantity that actually governs whether pattern i is a fixed point
+here.
 
 ## 4. Pattern separation — a measured deviation from the brief
 
@@ -156,12 +168,12 @@ Give the Hopfield energy a Gibbs measure p(ξ) ∝ exp(−βE(ξ)). Substituting
 using β·xᵢ·ξ − ½β‖ξ‖² = −½β(‖ξ − xᵢ‖² − ‖xᵢ‖²):
 
 ```
-exp(−βE(ξ)) ∝ Σᵢ wᵢ · exp(−β‖ξ − xᵢ‖²/2) · exp(β(‖xᵢ‖² − M²)/2)
+exp(−βE(ξ)) ∝ Σᵢ wᵢ · exp(−β‖ξ − xᵢ‖²/2)
 ```
 
-With unit-normalised patterns the trailing factor is constant, so **the Gibbs
-measure of the MHN is exactly a Gaussian mixture centred on the stored
-memories, with σ² = 1/β** — which is precisely the noised marginal p_σ of a
+The per-pattern norm term in the logits absorbs the residual exactly, so **the
+Gibbs measure of the MHN is exactly a Gaussian mixture centred on the stored
+memories, with σ² = 1/β — at any pattern scale** — which is precisely the noised marginal p_σ of a
 diffusion model over the memory set. Therefore:
 
 - **β is not a free knob; it is the inverse noise level.** Low β = early
@@ -180,9 +192,13 @@ This buys three concrete things, not just an analogy:
 1. **`log_density`** — a properly normalised log p, comparable across memory
    sets of different sizes, where raw energy is only defined up to a constant.
 2. **`basin_depth`** — retrieval confidence / confabulation detection.
-   Measured at the **cue, not the settled state**: after settling the state is
-   inside a basin by construction, which would report depth 0 for every query
-   including nonsense. Demo: 0.370 for a real cue vs 0.678 for gibberish.
+   Measured at the **cue** for free-text queries (after settling the state is
+   inside a basin by construction, reporting depth 0 for everything including
+   nonsense) and at the **settled state** for masked cues (an occluded cue is
+   far from every memory by construction, which would flag perfect completions).
+   Reported in nats via `depth_nats`, so a cutoff means the same thing at any β.
+   The ranking is reliable; the absolute cutoff needs per-deployment
+   calibration — see RESULTS.md §3.
 3. **`langevin_replay`** — principled hippocampal replay for consolidation,
    sampling the smoothed memory distribution with the exact score.
 
@@ -199,9 +215,13 @@ than shipped.
 ## 7. Evergreen vs temporal
 
 ```
-evergreen:  w = 1                                    (never decays)
+evergreen:  w = max_strength                          (never decays)
 temporal:   w = strength · 2^(−age_days / half_life)  (30-day half-life)
 ```
+
+Evergreen sits at the *ceiling*, not at 1.0. With evergreen pinned to 1.0 a
+temporal memory recalled often enough reached strength 3.0 and outranked every
+business rule — the opposite of the intended guarantee.
 
 Decay is applied **lazily at read time** (`refresh_priors`) — one tensor write,
 no background job, always time-accurate. Recall triggers reconsolidation:
@@ -252,6 +272,13 @@ tilted by exp(β‖zᵢ‖²/2).
 - **Consolidation pruning trusts the VAE.** A lossy reconstruction below
   threshold is not proof the content is recoverable. Evergreen protection
   mitigates the worst case; a text-level round-trip check would be stronger.
+- **Consolidation pruning may never fire** at a realistic training budget: the
+  benchmark measured 0 of 36 memories released after a 20-epoch pass. Measure
+  it rather than assuming the hippocampus drains.
+- **`langevin_replay` is not annealed** despite the diffusion framing, and its
+  seed noise is deliberately damped (`init_noise=0.1`): a full σ=1/√β isotropic
+  seed has radius σ√d, which in 1024-d exceeds the spacing between memories and
+  washes salience-weighted seeding into noise around the centroid.
 
 ## 10. Suggested next steps
 
@@ -276,3 +303,43 @@ tilted by exp(β‖zᵢ‖²/2).
   Surveying the Uncanny Resemblances of Associative Memories and Diffusion
   Models.* arXiv:2309.16750
 - Miyasawa (1961) / Efron (2011). *Tweedie's formula* — posterior mean denoising.
+
+---
+
+## 11. Review findings and fixes
+
+The package was reviewed adversarially, with every claim checked numerically
+rather than by reading. The review **confirmed** the core mathematics: the
+Ramsauer energy with a log-prior, CCCP descent (including under masking and
+non-uniform priors), the Gibbs/Gaussian-mixture identity, the normalisation of
+`log_density` (numerically integrated to 0.99999999999996), the Tweedie identity
+(agreement to 5e-16 in float64), and the ULA step. The equivalence in §6 is real.
+
+The defects were at the seams. All of the following were reproduced, fixed, and
+are now covered by `tests/test_review_regressions.py`:
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `score`/`denoise` and `log_density` described **different distributions** when `normalize_patterns=False` — the configuration consolidation runs in. Gradient norms diverged by 24; the Gibbs measure was norm-tilted, distorting replay mixing weights by 21×. | Folded −β‖xᵢ‖²/2 into the logits, replacing the global +½M². Behaviour-preserving for unit-norm patterns, exact at any scale. |
+| 2 | `separation()` carried Ramsauer's exponential-error claim, which assumes a uniform prior. A memory with log-prior −25 reported Δ=0.85 ("healthy") but was not a fixed point. | Added `effective_separation()`; corrected the docs. |
+| 3 | `basin_depth().depth` documented as ">0 always"; measured −0.004 at a mixture point, so `is_confabulation` **failed open** exactly at ambiguous cues. Its 0.5 cutoff was also a raw energy, not portable across β. | Documented the true sign; added scale-free `depth_nats`; made thresholds configurable; fixed the masked-cue path. |
+| 4 | `prune_predicted` compared against the **live gate quantile**, which drifts upward as new items arrive — measured deleting 1 of 4 memories with the cortex untouched since those memories were written. | Switched to a relative-drop criterion against each record's surprise at ingestion. Pruning can now only fire if this cortex actually improved on this item. |
+| 5 | Consolidation trains the cortex, silently invalidating latent-derived keys. In `LATENT` mode, the same text encoded to cosine **0.327** against its own stored key after one `sleep()`. | `MemoryStore.reindex()` re-encodes every key after training. |
+| 6 | `record.key` **aliased** `record.latent`; `store.keys()` disagreed with `mhn.patterns` for non-unit-norm keys; no validation on duplicate ids or key dimension. | Clone on init, write the normalised pattern back, validate on `add`. |
+| 7 | `gist()` reinforced by default, so a schema-level read bumped the strength and reset the decay clock of whichever memory happened to top a metastable mixture. Basin was also computed *after* reinforcement, so trace and basin used different priors. | `reinforce=False` for `gist`; basin measured before reinforcement. |
+| 8 | `mode="elbo"` returned `recon + kl_weight·kl` — a β-VAE objective, not a bound on −log p(x). | Uses the full KL. |
+| 9 | Evergreen salience was 1.0 while a reinforced episode could reach 3.0, inverting the "evergreen always wins" guarantee. | Evergreen sits at `max_strength`. |
+
+Test-quality problems the review found, also fixed: two consolidation tests
+passed `threshold=float("inf")`, which prunes unconditionally and tested nothing
+about learning; `test_partial_cue_completes_the_missing_half` asserted cos > 0.8
+where the true value is 1.0 and a degenerate mean-returning implementation
+scores 0.35; `test_basin_depth_flags_an_out_of_distribution_query` compared two
+values that were both exactly 0.5; and two assertions were true by construction.
+Coverage was added for energy descent under priors and masking, the `log_density`
+normalising constant, and the replay *distribution* rather than just its shape.
+
+Known-and-accepted, not fixed: `ModernHopfieldNetwork` ignores
+`MemorySystemConfig.device` (CPU only for now), `basin_depth` is single-query,
+and `PatternCompleter.occlude` remains on the read path though it is really
+evaluation tooling.
