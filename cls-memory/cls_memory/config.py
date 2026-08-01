@@ -137,6 +137,50 @@ class ConsolidationConfig:
     replay_steps: int = 8
     replay_step_size: float = 0.05
     """Langevin step size used when sampling the hippocampal energy landscape."""
+    episodic_ratio: float = 0.125
+    """Fraction of the replay batch drawn from the *stored embeddings* rather
+    than from the cortex's own decoder.
+
+    This exists because decoder-only replay is a no-op for learning. Measured:
+    `decode(latent)` of a stored anomaly had cosine 0.047 with the embedding it
+    was supposed to be reinstating, and the cortex's surprise on its own decoder
+    output was 0.0001 against 1.15 on the real memories -- so training on it is
+    self-distillation with essentially zero gradient signal about the episodes,
+    and pruning could never fire (0 of 36 released at any budget up to 150
+    epochs).
+
+    The value is a measured operating point on a real trade-off, not a guess.
+    Episodic replay teaches the episodes and, unchecked, overwrites the schema
+    while doing it; the generated share is what holds the schema in place. Full
+    benchmark, 30 episodic memories, drift measured against naive training on
+    off-schema data:
+
+        ratio   drift reduction   pruned @20ep   pruned @40ep
+        0.000            55.3%              0              0
+        0.125            54.9%              6             16
+        0.250            50.3%             15             21
+        0.500            46.0%             23             29
+
+    0.125 is the knee: the 0.4-point drift cost is inside run-to-run noise (the
+    same measurement has moved 57.1 -> 56.1 -> 55.3 across reruns), and it is
+    the smallest share that makes the loop close at all. Raise it if draining
+    the hippocampus matters more than schema stability in your deployment, and
+    expect to pay roughly one point of drift protection per 2-3 extra memories
+    released."""
+    replay_sigma: float = 0.05
+    """Diffusion noise level for embedding-space replay, i.e. sigma in the
+    Gaussian mixture the hippocampus encodes (see energy.py); the landscape is
+    sampled at beta = 1 / sigma^2.
+
+    Deliberately NOT the hippocampal `HopfieldConfig.beta`. Beta is chosen for
+    retrieval sharpness over 2048-d sparse keys; reused as a noise level over
+    256-d unit-norm embeddings it gives sigma = 1/sqrt(32) = 0.177, whose
+    samples have norm 3.41 and cosine 0.295 to the nearest stored memory --
+    the usual high-dimensional Gaussian-mixture failure the seed noise in
+    `langevin_replay` already works around. Measured cosine to the nearest
+    stored memory: 0.939 at sigma=0.02, 0.737 at 0.05, 0.481 at 0.1. 0.05
+    smooths enough that the cortex learns the neighbourhood of each episode
+    rather than the point."""
     interleave_ratio: float = 0.5
     """Fraction of each consolidation batch drawn from replay rather than new
     data. Interleaving is what prevents catastrophic forgetting in CLS."""
@@ -144,7 +188,16 @@ class ConsolidationConfig:
     """Prune a memory once the cortex reconstructs it at less than this
     fraction of its surprise at ingestion. A relative test, because an absolute
     quantile threshold drifts with the ingestion stream and fires without any
-    consolidation having happened."""
+    consolidation having happened.
+
+    0.5 survives the check that matters, now that surprise actually moves.
+    After a consolidation pass the memories it released reconstructed at cosine
+    0.843 to their own embedding and at worst 0.496 absolute surprise, against
+    a mean of 0.798 for routine documents under the same cortex -- i.e. every
+    released memory was predicted at least as well as the schema's own training
+    data, which is the strongest statement "the schema now covers it" can
+    reasonably mean. Loosening to 0.7 releases 26 at cosine 0.739; tightening
+    to 0.2 releases 4 at 0.892."""
     prune_predicted: bool = True
     """After consolidation, drop episodic memories the cortex now reconstructs
     below threshold -- the hippocampal trace has been absorbed by the schema."""

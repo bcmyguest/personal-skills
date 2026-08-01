@@ -413,6 +413,48 @@ def test_consolidation_prunes_what_the_cortex_learns():
     assert len(system) == 0
 
 
+def test_sleep_drains_the_hippocampus():
+    """End to end through the public API, with no hand-fed training.
+
+    `test_consolidation_prunes_what_the_cortex_learns` overtrains the cortex on
+    the exact stored text, which proves the criterion works but says nothing
+    about whether consolidation ever reaches it. This runs a plain `sleep()`
+    and requires the loop to close on its own -- which it did not until replay
+    started carrying the real episodes (0 of 36 released on the benchmark).
+    """
+    system = make_system()
+    # The shared test config uses replay_batch=16 for speed, which at the
+    # default episodic_ratio is two episodic samples per batch. Use the library
+    # default instead -- the question here is whether the loop closes, not how
+    # it behaves on a degenerate replay budget.
+    system.config.consolidation.replay_batch = 64
+    system.bootstrap(CORPUS)
+    novel = [
+        "the shard rebalancer corrupted the orders index during failover",
+        "a contractor deleted the staging kubernetes namespace by accident",
+        "the payment provider rotated credentials without any notice",
+        "an unfamiliar vendor invoice arrived from a shell company in belize",
+    ]
+    stored = [system.log_event(text).record for text in novel]
+    assert all(r is not None for r in stored)
+    rule = system.remember_rule("all refunds above 500 dollars need director approval").record
+    before = {r.id: float(system.cortex.surprise(r.embedding)[0]) for r in stored}
+
+    report = system.sleep(epochs=40)
+
+    assert report.pruned_predicted >= 2, (
+        f"consolidation released {report.pruned_predicted} of {len(novel)} episodes"
+    )
+    # Not vacuous: every released memory must have got measurably easier for
+    # the cortex, so this cannot pass on a system that learned nothing.
+    for record in stored:
+        if record.id in report.pruned_ids:
+            now = float(system.cortex.surprise(record.embedding)[0])
+            assert now < 0.5 * before[record.id]
+    assert rule.id not in report.pruned_ids
+    assert rule.id in system.store
+
+
 def test_prune_does_not_fire_without_consolidation():
     """Regression guard: pruning must require evidence that *this* cortex
     improved on the item. Thresholding against the live gate quantile used to

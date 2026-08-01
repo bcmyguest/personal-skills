@@ -19,6 +19,7 @@ Everything is seeded. Numbers printed here are what the README should cite.
 from __future__ import annotations
 
 import argparse
+import copy
 import random
 import time
 
@@ -472,20 +473,63 @@ def experiment_consolidation(routine, anomaly, epochs: int) -> None:
     )
     print(f"\nverdict: {verdict} ({reduction:.1f}% less drift)")
 
-    # Pruning behaviour: what does consolidation release?
-    system = build_system(epochs=epochs)
-    system.bootstrap(train)
+    # Pruning behaviour: what does consolidation release, and at what budget?
+    #
+    # Reported as a sweep rather than a single number because pruning is far
+    # more budget-sensitive than any other mechanism here: the criterion is a
+    # step function on a quantity that moves gradually, so a pass that has
+    # consolidated most of the way still releases nothing. The drop ratio
+    # (surprise now / surprise at ingestion) is printed alongside so the
+    # progress is visible even when the count is zero.
+    # One bootstrapped system, deep-copied per row. Re-bootstrapping per row
+    # gives every budget a different random init trained from a different RNG
+    # state, and the resulting column is not a budget curve: measured that way
+    # the counts came out 5, 10, 12, 8 at 20/40/60/100 epochs, i.e. more budget
+    # apparently releasing fewer memories. The variation was between cortices,
+    # not between budgets.
+    print("\nconsolidation budget sweep — replay-only passes (no new data),")
+    print("one bootstrapped cortex deep-copied per row:")
+    print(f"{'epochs':>7} {'memories':>9} {'pruned':>7} {'evergreen':>10} "
+          f"{'median drop':>12} {'min drop':>9} {'schema drift':>13}")
+    print("-" * 78)
+    seed_system = build_system(epochs=epochs)
+    seed_system.bootstrap(train)
     for item in anomaly[:30]:
-        system.ingest(item.text)
+        seed_system.ingest(item.text)
     for item in synthetic.RULE_TEMPLATES:
-        system.remember_rule(item)
-    before_n = len(system)
-    report = system.sleep(epochs=20)
-    print(f"\nconsolidation pass: {before_n} -> {len(system)} memories "
-          f"({report.replayed} replayed, {report.pruned_predicted} pruned as learned, "
-          f"loss {report.loss_before:.4f} -> {report.loss_after:.4f})")
-    evergreen = sum(1 for r in system.records if r.is_evergreen)
-    print(f"evergreen surviving: {evergreen}/{len(synthetic.RULE_TEMPLATES)}")
+        seed_system.remember_rule(item)
+    old_embeddings = seed_system.embedder.encode(old)
+    before_n = len(seed_system)
+    episodic = sum(1 for r in seed_system.records if not r.is_evergreen)
+    drift_before = float(seed_system.cortex.surprise(old_embeddings).mean())
+
+    for budget in (5, 20, 40, 60, 100):
+        torch.manual_seed(SEED)
+        system = copy.deepcopy(seed_system)
+
+        # Prune in a second step so the drop ratios can be read off the *whole*
+        # memory set. Measuring after the prune would survivor-bias the median
+        # upward by exactly the memories the pass succeeded on.
+        system.consolidation.config.prune_predicted = False
+        system.sleep(epochs=budget)
+        drift_after = float(system.cortex.surprise(old_embeddings).mean())
+        ratios = sorted(
+            r for r in system.consolidation.drop_ratios().values() if r != float("inf")
+        )
+        pruned = system.consolidation.prune_predicted()
+
+        median = ratios[len(ratios) // 2] if ratios else float("nan")
+        evergreen = sum(1 for r in system.records if r.is_evergreen)
+        print(f"{budget:>7} {before_n:>4} -> {len(system):<2} "
+              f"{len(pruned):>7} {evergreen:>10} {median:>12.4f} "
+              f"{min(ratios):>9.4f} {drift_after - drift_before:>+13.4f}")
+        assert evergreen == len(synthetic.RULE_TEMPLATES), "evergreen must survive"
+    print(f"({episodic} of {before_n} memories are episodic and therefore "
+          f"eligible; evergreen is exempt — asserted)")
+    print("drop ratio is surprise-now / surprise-at-ingestion over ALL memories,")
+    print(f"measured before pruning; the criterion is < "
+          f"{system.config.consolidation.relative_drop}, so a ratio near 1.0 "
+          "means replay taught the cortex nothing")
 
 
 # --------------------------------------------------------------------------- main

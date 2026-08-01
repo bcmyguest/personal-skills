@@ -161,25 +161,61 @@ Salience halves per 30 days as designed. (Evergreen salience is `max_strength`=3
 floor between day 90 and 180 (2^−6 = 0.0156) and are swept. All 6 evergreen
 rules survive a simulated year — asserted in the benchmark, not just observed.
 
-## 7. Consolidation — interleaved replay cuts forgetting 56%
+## 7. Consolidation — interleaved replay cuts forgetting 55%
 
 Schema surprise on 400 old routine documents after training on off-schema data:
 
 | condition | before | after | drift |
 |---|---|---|---|
-| no replay (naive) | 0.0960 | 1.4732 | **+1.3772** |
-| interleaved replay | 0.0960 | 0.6997 | **+0.6037** |
+| no replay (naive) | 0.0960 | 1.4795 | **+1.3835** |
+| interleaved replay | 0.0960 | 0.7261 | **+0.6301** |
 
-**56.1% less drift.** The core CLS claim reproduces: interleaving hippocampal
+**54.5% less drift.** The core CLS claim reproduces: interleaving hippocampal
 replay with new data measurably protects the existing schema. (The quick-mode
-run shows 93.2% on a smaller corpus; the effect size is corpus-dependent, the
+run shows 90.8% on a smaller corpus; the effect size is corpus-dependent, the
 sign is not.)
 
-One negative observation: in the same pass, `prune_predicted` removed **0 of 36**
-memories. Twenty epochs of consolidation was not enough for the cortex to learn
-the anomalies well enough to release them, so the hippocampus never drained.
-Consolidation pruning is far more sensitive to training budget than the other
-mechanisms — do not assume it is doing anything without measuring it.
+This number has read 57.1%, 56.1%, 55.3% and 54.5% across reruns and code
+changes. The last of those is with episodic replay switched on (below); the
+same run with `episodic_ratio=0` measured 55.3%, so the fix costs 0.8 points,
+which is inside the spread of the metric itself.
+
+### 7b. Pruning — the hippocampus now drains, but only partly
+
+`prune_predicted` used to remove **0 of 36** memories at any budget, because
+replay fed the cortex its own decoder output. §9 below has the diagnosis. With
+`episodic_ratio=0.125`, one bootstrapped cortex deep-copied per row:
+
+| epochs | memories | pruned | evergreen | median drop | min drop | schema drift |
+|---|---|---|---|---|---|---|
+| 5 | 36 → 36 | 0 | 6 | 0.8927 | 0.6431 | +0.2978 |
+| 20 | 36 → 30 | 6 | 6 | 0.5696 | 0.1396 | +0.4577 |
+| **40** | 36 → 20 | **16** | 6 | 0.4968 | 0.1338 | +0.6450 |
+| 60 | 36 → 23 | 13 | 6 | 0.5153 | 0.1536 | +0.6841 |
+| 100 | 36 → 23 | 13 | 6 | 0.5119 | 0.1765 | +0.7250 |
+
+Drop ratio is surprise-now / surprise-at-ingestion, measured over the whole
+memory set *before* pruning — measuring after would survivor-bias the median
+upward by exactly the memories the pass succeeded on. All 6 evergreen rules
+survive every row (asserted).
+
+Three things to read off this table:
+
+1. **More budget is not the answer past ~40 epochs.** The median drop ratio
+   falls 0.89 → 0.57 → 0.50 and then flattens; 100 epochs releases no more than
+   40 does. Consolidation converges to a mixture-determined ceiling, and the
+   knob that moves the ceiling is `episodic_ratio`, not `epochs`.
+2. **The median lands almost exactly on the 0.5 criterion**, which is why the
+   count wobbles between 13 and 16 across the plateau. Half the memory set is
+   sitting on the threshold; treat the count as ±3.
+3. **The pass drifts the schema** (+0.30 to +0.73). This is not caused by
+   episodic replay — the old decoder-only replay drifted +0.48 in the same pass
+   while learning nothing, because its low-norm outputs pull the VAE toward
+   that region. A replay-only `sleep()` with no new data is a diagnostic, not
+   an operating mode; real consolidation interleaves.
+
+The earlier claim that pruning was merely "budget-sensitive" was wrong. It was
+structurally impossible, and the budget was a red herring.
 
 ---
 
@@ -198,7 +234,8 @@ Running the system rather than reasoning about it corrected four things:
    active-unit protocol is the real one — and the system still passes it down
    to 10% of units.
 4. **Consolidation pruning silently did nothing** at a realistic training
-   budget, while every other mechanism worked.
+   budget, while every other mechanism worked. Chasing that number is what
+   turned up §9 — the cause was not the budget.
 
 
 ---
@@ -211,3 +248,66 @@ ROC AUC 1.0000 unchanged, key-representation table identical, replay benefit
 57.1% → 56.1%. The energy change is exactly behaviour-preserving for unit-norm
 patterns, which is what the retrieval path uses, so this is the expected result
 rather than a lucky one.
+
+Re-run again after the replay fix in §9. Experiments 1–6 came out **byte for
+byte identical** (the only differing line in the diff was the wall-clock timing
+of the bootstrap), which is what should happen: the change touches replay
+content only, and nothing in experiments 1–6 calls consolidation. Experiment 7
+is the one that moved, and §7 and §9 give both sides of it.
+
+---
+
+## 9. The replay defect: why pruning could never fire
+
+Experiment 7 reported 0 of 36 memories released and RESULTS blamed the training
+budget. That was wrong. Instrumenting a consolidation pass — surprise per
+stored memory, before and after — showed the budget was never the constraint:
+
+| | before pass | after pass | ratio |
+|---|---|---|---|
+| mean surprise over 34 stored memories | 1.1526 | 1.1544 | **1.0016** |
+
+Surprise went *up*. Across all 34 memories the per-item ratio ranged 0.9985 to
+1.0046 — not one moved even 1% toward the 0.5 prune criterion, at 20, 60 or 150
+epochs. The criterion was correct and permanently inert.
+
+**The cause.** `replay()` returned `cortex.decode(latents)` and trained the VAE
+on it. That is self-distillation: the reconstruction target is already what the
+model emits, so there is no gradient. Measured on the same pass:
+
+| quantity | value |
+|---|---|
+| cos(`decode(latent)`, the embedding it came from) | **0.047** |
+| cortex surprise on its own decoder output | **0.0001** |
+| cortex surprise on the real stored embeddings | **1.1526** |
+| mean norm of decoder output vs stored embeddings | 0.44 vs 1.00 |
+| max cos(replay sample, any stored embedding) | 0.17 |
+
+The decoder is trained on routine text and has no resolution where novel
+episodes live, so it cannot represent an anomaly latent at all. Replay was not
+reinstating episodes; it was emitting near-garbage that the cortex reconstructs
+perfectly. The 56% forgetting protection was real but was coming from
+pseudo-rehearsal — pinning the current function — not from replaying memories.
+
+**The fix and its price.** Replay is now a mixture: `episodic_ratio` of the
+batch is Langevin-sampled in *embedding* space around the true stored
+embeddings, the rest is the old generated path. Both halves are load-bearing.
+Full benchmark, 30 episodic memories:
+
+| `episodic_ratio` | drift reduction | pruned @20 ep | pruned @40 ep |
+|---|---|---|---|
+| 0.000 (old behaviour) | 55.3% | 0 | 0 |
+| **0.125 (default)** | **54.9%** | **6** | **16** |
+| 0.250 | 50.3% | 15 | 21 |
+| 0.500 | 46.0% | 23 | 29 |
+
+Pure episodic replay was measured too: it releases every memory and destroys
+the schema doing it (schema drift +0.33 against +0.019 for the mixture on the
+quick corpus). 0.125 is the knee — the drift cost is inside the metric's own
+run-to-run spread, and it is the smallest share that closes the loop at all.
+
+**What still does not drain.** 14 of 30 episodic memories survive a converged
+pass, and raising the budget does not release them (§7b). Releasing them means
+raising `episodic_ratio`, which costs measurable schema protection at a rate of
+roughly one point per 2–3 extra memories. There is no setting measured here
+that drains the store fully and keeps drift protection intact.

@@ -10,7 +10,12 @@ from __future__ import annotations
 import torch
 
 from cls_memory import MemorySystemConfig, OrganizationalMemory, Persistence
-from cls_memory.config import CortexConfig, HopfieldConfig, NoveltyConfig
+from cls_memory.config import (
+    ConsolidationConfig,
+    CortexConfig,
+    HopfieldConfig,
+    NoveltyConfig,
+)
 
 # Eighteen months of unremarkable operational chatter: the organisation's schema.
 ROUTINE = [
@@ -64,6 +69,10 @@ def main() -> None:
         ),
         novelty=NoveltyConfig(quantile=0.8, warmup=4, window=256),
         hopfield=HopfieldConfig(beta=32.0),
+        # 64 replay samples over a handful of memories leaves under one
+        # episodic sample per memory once the salience weighting has taken its
+        # share, and consolidation stalls. Match the benchmark's budget.
+        consolidation=ConsolidationConfig(replay_batch=256),
         seed=0,
     )
     system = OrganizationalMemory(config)
@@ -156,12 +165,34 @@ def main() -> None:
 
     # --------------------------------------------------------- consolidation
     rule("8. Consolidation: replay + interleaved training")
-    system.log_event("the shard rebalancer corrupted the orders index again")
-    consolidated = system.sleep(epochs=20)
+    for text in INCIDENTS[:3]:
+        system.log_event(text + " again")
+    # Drop ratio is surprise-now / surprise-at-ingestion, the quantity pruning
+    # actually thresholds. Printed alongside the count because the count is a
+    # step function: a pass that moved the ratio from 1.00 to 0.55 has
+    # consolidated most of the way while releasing nothing, and the count alone
+    # cannot tell that apart from a pass that did nothing at all.
+    was = {r.id: r for r in system.records}
+    before = system.consolidation.drop_ratios()
+    consolidated = system.sleep(epochs=60)
+    after = system.consolidation.drop_ratios()
     print(f"replayed samples  {consolidated.replayed}")
     print(f"loss              {consolidated.loss_before:.4f} -> {consolidated.loss_after:.4f}")
-    print(f"pruned as learned {consolidated.pruned_predicted}")
+    print(f"pruned as learned {consolidated.pruned_predicted} "
+          f"(criterion: drop ratio < {config.consolidation.relative_drop})")
     print(f"surviving         {len(system)} memories")
+
+    print("\nsurprise now / surprise at ingestion, per memory")
+    print("(1.00 = the cortex learned nothing about it):")
+    for record_id, ratio in before.items():
+        record = was[record_id]
+        if record.id not in after:
+            state = "RELEASED"
+        elif record.is_evergreen:
+            state = f"{after[record_id]:.3f}  (evergreen — exempt)"
+        else:
+            state = f"{after[record_id]:.3f}"
+        print(f"    {ratio:.3f} -> {state:<28} {record.text[:34]}")
 
     print("\nEvergreen rules survive every mechanism -- decay, sweep, and")
     print("consolidation pruning:")

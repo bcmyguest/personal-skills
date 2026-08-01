@@ -24,7 +24,7 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-82 tests pass. `examples/demo.py` runs the full lifecycle end to end, and
+87 tests pass. `examples/demo.py` runs the full lifecycle end to end, and
 `experiments/benchmark.py` trains and evaluates the system on a labelled
 synthetic corpus — results in [RESULTS.md](RESULTS.md). Everything below
 labelled "measured" was measured in this repo, not assumed.
@@ -34,7 +34,7 @@ the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 82 passed
+uv run pytest                       # 87 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -244,12 +244,61 @@ with all three business rules intact.
    below threshold have been absorbed into semantic knowledge; the hippocampal
    trace is released. Evergreen exempt.
 
-Replay runs in **latent** space, not key space: the decoder reads latents, and
-the DG keys are a space it has never seen. `_latent_landscape()` rebuilds the
-energy landscape over stored latents carrying the same priors. Patterns are
-left unnormalised there (normalising would move them off the decoder's
-manifold); the Gibbs measure is still a Gaussian mixture, with mixing weights
-tilted by exp(β‖zᵢ‖²/2).
+### Replay is two mechanisms, and conflating them broke the loop
+
+Replay originally returned `decode(latents)` only, and that is a *no-op for
+learning*: the reconstruction target is already what the model emits. Measured,
+`decode(latent)` of a stored anomaly had cosine **0.047** with the embedding it
+was supposed to be reinstating (the decoder is trained on routine text and has
+no resolution where novel episodes live), and the cortex's surprise on its own
+decoder output was **0.0001** against 1.15 on the real memories. Consolidation
+therefore left surprise on the stored memories at **1.0016×** its value at
+ingestion after 150 epochs, and pruning — correctly — never fired.
+
+The batch is now a mixture, because the two halves do different jobs:
+
+| component | space | what it does |
+|---|---|---|
+| **episodic** (`episodic_ratio`) | embedding | noised samples around the *true* stored embeddings. The only part that teaches the cortex anything. |
+| **generated** (the rest) | latent → decoder | pseudo-rehearsal (Robins 1995): the cortex trained on its own output. Teaches nothing; pins the existing schema. |
+
+Neither alone works. Measured on the full benchmark (30 episodic memories,
+drift reduction against naive training on off-schema data):
+
+| `episodic_ratio` | drift reduction | pruned @20 ep | pruned @40 ep |
+|---|---|---|---|
+| 0.000 (the old behaviour) | 55.3% | 0 | 0 |
+| **0.125 (default)** | **54.9%** | **6** | **16** |
+| 0.250 | 50.3% | 15 | 21 |
+| 0.500 | 46.0% | 23 | 29 |
+
+0.125 is the knee. Its 0.4-point drift cost is inside run-to-run noise — the
+same measurement has read 57.1%, 56.1% and 55.3% across reruns — and it is the
+smallest share that closes the loop at all. Raise it deliberately if draining
+the fast store matters more than schema stability, at roughly one point of
+drift protection per 2–3 extra memories released.
+
+The generated component runs in **latent** space, not key space: the decoder
+reads latents, and the DG keys are a space it has never seen.
+`_latent_landscape()` rebuilds the energy landscape over stored latents
+carrying the same priors. Patterns are left unnormalised there (normalising
+would move them off the decoder's manifold); the Gibbs measure is still a
+Gaussian mixture, with mixing weights tilted by exp(β‖zᵢ‖²/2).
+
+The episodic component runs in **embedding** space, where the cortex actually
+trains, via `_embedding_landscape()`. Its noise level is `replay_sigma=0.05`,
+**not** the hippocampal β. β is chosen for retrieval sharpness over 2048-d
+sparse keys; reused as a noise level over 256-d unit-norm embeddings it gives
+σ = 1/√32 = 0.177, whose samples have norm 3.41 and cosine 0.295 to the nearest
+stored memory — the same high-dimensional Gaussian-mixture failure that
+`langevin_replay`'s damped seed noise already works around. Measured cosine to
+the nearest stored memory: 0.939 at σ=0.02, 0.737 at 0.05, 0.481 at 0.1.
+
+The ULA step size is capped at σ² there. Unadjusted Langevin over a Gaussian of
+precision β = 1/σ² = 400 contracts by (1 − βη/2) per step and **diverges** for
+η > 4/β = 0.01; the configured `replay_step_size` of 0.05 is five times that
+and blows the samples up by ~1300× (asserted in
+`test_replay_is_numerically_stable_at_the_configured_noise_level`).
 
 ---
 
@@ -272,9 +321,36 @@ tilted by exp(β‖zᵢ‖²/2).
 - **Consolidation pruning trusts the VAE.** A lossy reconstruction below
   threshold is not proof the content is recoverable. Evergreen protection
   mitigates the worst case; a text-level round-trip check would be stronger.
-- **Consolidation pruning may never fire** at a realistic training budget: the
-  benchmark measured 0 of 36 memories released after a 20-epoch pass. Measure
-  it rather than assuming the hippocampus drains.
+  The best available evidence that `relative_drop=0.5` is not too loose is
+  indirect: released memories reconstructed at cosine 0.843 to their own
+  embedding, and at worst 0.496 absolute surprise against 0.798 mean for
+  routine documents under the same cortex — i.e. better predicted than the
+  schema's own training data.
+- **Consolidation pruning is budget-sensitive**, far more so than any other
+  mechanism here. The criterion is a step function on a quantity that moves
+  gradually, so a pass that has consolidated most of the way still releases
+  nothing: on the full benchmark, 0 of 30 at 5 epochs, 6 at 20, 16 at 40, 30 at
+  60. Benchmark experiment 7 prints the whole curve plus the median drop ratio
+  for this reason. Do not assume the hippocampus drains — read the sweep.
+- **A pure `sleep()` with no new data drifts the schema** (+0.5 to +0.7 on the
+  full benchmark). This is *not* caused by episodic replay — the old
+  decoder-only replay drifted +0.48 in the same pass while learning nothing,
+  because its low-norm decoder outputs pull the VAE toward that region.
+  Consolidation is meant to be interleaved with real new data; `sleep(None)` is
+  a diagnostic, not an operating mode.
+- **Replay spends part of its budget on records that can never be pruned.**
+  Seeding is salience-weighted, and evergreen sits at `max_strength`=3.0 against
+  1.0 for a fresh episode — so on the benchmark's 6 evergreen / 30 episodic
+  store, evergreen draws ~37% of replay while being exempt from pruning. It is
+  defensible (business rules genuinely should become semantic knowledge, they
+  are merely also kept verbatim) but it is not free, and it is why a small
+  `replay_batch` stalls consolidation: at 64 samples over 6 memories the
+  episodes get under one sample each. `episodic_ratio` interacts with
+  `replay_batch` and the evergreen fraction, not just with epochs.
+- **Roughly half the store still does not drain.** 14 of 30 episodic memories
+  survive a converged pass and more epochs do not release them — the ceiling is
+  set by `episodic_ratio`, and raising it costs schema protection. No setting
+  measured here both drains the store fully and keeps drift protection intact.
 - **`langevin_replay` is not annealed** despite the diffusion framing, and its
   seed noise is deliberately damped (`init_noise=0.1`): a full σ=1/√β isotropic
   seed has radius σ√d, which in 1024-d exceeds the spacing between memories and
@@ -329,6 +405,7 @@ are now covered by `tests/test_review_regressions.py`:
 | 7 | `gist()` reinforced by default, so a schema-level read bumped the strength and reset the decay clock of whichever memory happened to top a metastable mixture. Basin was also computed *after* reinforcement, so trace and basin used different priors. | `reinforce=False` for `gist`; basin measured before reinforcement. |
 | 8 | `mode="elbo"` returned `recon + kl_weight·kl` — a β-VAE objective, not a bound on −log p(x). | Uses the full KL. |
 | 9 | Evergreen salience was 1.0 while a reinforced episode could reach 3.0, inverting the "evergreen always wins" guarantee. | Evergreen sits at `max_strength`. |
+| 10 | **Consolidation pruning never fired** — 0 of 36 memories released. The criterion (defect 4) was correct; `replay()` was empty. Training the VAE on `decode(latents)` is self-distillation: measured cosine **0.047** between a decoded latent and the embedding it came from, surprise **0.0001** on the cortex's own output, and surprise on the stored memories still at **1.0016×** its ingestion value after 150 epochs. The hippocampus could not drain, which is the entire justification for a two-store architecture. | Replay is now a mixture: `episodic_ratio` (0.125) sampled in *embedding* space around the true stored embeddings, the rest generated as before. Pruning goes 0 → 16 of 30 at a 40-epoch pass; drift reduction 55.3% → 54.9%, inside run noise. |
 
 Test-quality problems the review found, also fixed: two consolidation tests
 passed `threshold=float("inf")`, which prunes unconditionally and tested nothing

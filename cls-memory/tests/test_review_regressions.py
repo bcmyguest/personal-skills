@@ -331,3 +331,128 @@ def test_surprise_restores_training_mode():
     assert cortex.training
     cortex.latent(torch.randn(8))
     assert cortex.training
+
+
+# ------------------------------------------------- S11: replay content / pruning
+
+
+def _system_with_episodes(episodic_ratio: float) -> OrganizationalMemory:
+    """A trained system holding five off-schema episodes."""
+    torch.manual_seed(0)
+    system = make_system()
+    system.bootstrap(CORPUS)
+    for text in (
+        "the shard rebalancer corrupted the orders index during failover",
+        "a contractor deleted the staging kubernetes namespace by accident",
+        "the payment provider rotated credentials without any notice",
+        "an unfamiliar vendor invoice arrived from a shell company in belize",
+        "molten glass rained over the harbour as the volcano erupted",
+    ):
+        system.log_event(text)
+    assert len(system) == 5
+    system.config.consolidation.episodic_ratio = episodic_ratio
+    return system
+
+
+def _nearest_cosine(samples: torch.Tensor, stored: torch.Tensor) -> float:
+    """Mean cosine from each replay sample to the closest stored embedding."""
+    sim = (
+        torch.nn.functional.normalize(samples, dim=-1)
+        @ torch.nn.functional.normalize(stored, dim=-1).T
+    )
+    return float(sim.max(dim=-1).values.mean())
+
+
+def test_replay_reinstates_the_stored_episodes():
+    """Replay is supposed to reinstate hippocampal traces in the cortex. The
+    decoder path does not: measured on the benchmark corpus, `decode(latent)`
+    of a stored anomaly had cosine 0.047 with the embedding it came from,
+    because the decoder was trained on routine text and has no resolution where
+    novel episodes live. Only the embedding-space component carries the episode.
+    """
+    system = _system_with_episodes(0.5)
+    stored = system.store.embeddings()
+
+    episodic = system.consolidation._replay_episodic(64)
+    generated = system.consolidation._replay_generated(64)
+
+    assert _nearest_cosine(episodic, stored) > 0.8, "episodic replay lost the episodes"
+    assert _nearest_cosine(generated, stored) < 0.6, (
+        "the generated component unexpectedly reinstates episodes; if this ever "
+        "becomes true the episodic component may no longer be needed"
+    )
+    assert _nearest_cosine(system.consolidation.replay(64), stored) > 0.6
+
+
+def test_replay_is_numerically_stable_at_the_configured_noise_level():
+    """Guard on the ULA step-size cap in `_replay_episodic`.
+
+    The embedding landscape runs at beta = 1/replay_sigma^2 = 400, where the
+    unadjusted Langevin map contracts by (1 - beta*eta/2) per step and diverges
+    for eta > 4/beta = 0.01. The configured `replay_step_size` of 0.05 is five
+    times that, so using it unclamped multiplies the state by -9 every step.
+    """
+    system = _system_with_episodes(1.0)
+    stored = system.store.embeddings()
+    samples = system.consolidation.replay(64)
+    assert torch.isfinite(samples).all()
+    ratio = float(samples.norm(dim=-1).mean() / stored.norm(dim=-1).mean())
+    assert 0.5 < ratio < 2.0, f"replay samples left the embedding scale (x{ratio:.2f})"
+
+
+def test_decoder_only_replay_teaches_the_cortex_nothing():
+    """The defect this section exists for.
+
+    Training the VAE on its own decoder output is self-distillation: the target
+    is already what the model emits. Measured on the benchmark, surprise on the
+    stored memories after a 150-epoch pass was 1.0016x its value at ingestion,
+    so `prune_predicted` was correct and permanently inert -- 0 of 36 memories
+    released. The comparison against the fixed default is the point: this is
+    not a claim that pruning is hard, it is a claim that replay was empty.
+    """
+    naive = _system_with_episodes(0.0)
+    naive.consolidation.config.prune_predicted = False
+    naive.consolidation.consolidate(None, epochs=60)
+    naive_ratios = list(naive.consolidation.drop_ratios().values())
+
+    assert min(naive_ratios) > 0.9, (
+        "decoder-only replay moved surprise; the self-distillation reading of "
+        f"the bug no longer holds (min drop ratio {min(naive_ratios):.4f})"
+    )
+    assert naive.consolidation.prune_predicted() == []
+
+    fixed = _system_with_episodes(0.5)
+    fixed.consolidation.config.prune_predicted = False
+    fixed.consolidation.consolidate(None, epochs=60)
+    fixed_ratios = list(fixed.consolidation.drop_ratios().values())
+
+    assert min(fixed_ratios) < 0.5 * min(naive_ratios)
+    assert len(fixed.consolidation.prune_predicted()) >= 3
+
+
+def test_generated_replay_share_is_what_protects_the_schema():
+    """Why `episodic_ratio` is 0.125 and not 1.0.
+
+    Replaying only the stored episodes learns them fastest and takes the schema
+    down doing it. Measured on the full benchmark, replay's drift reduction
+    against naive training falls 55.3% -> 54.9% -> 50.3% -> 46.0% as the ratio
+    goes 0 -> 0.125 -> 0.25 -> 0.5, and on this corpus a replay-only pass at
+    ratio 1.0 drifts the schema roughly twice as far as at 0.5. Pruning bought
+    at that price is not worth having, so the ordering is asserted rather than
+    just the pruning.
+    """
+    old = None
+    drift = {}
+    for ratio in (0.5, 1.0):
+        system = _system_with_episodes(ratio)
+        if old is None:
+            old = system.embedder.encode(CORPUS)
+        before = float(system.cortex.surprise(old).mean())
+        system.consolidation.config.prune_predicted = False
+        system.consolidation.consolidate(None, epochs=60)
+        drift[ratio] = float(system.cortex.surprise(old).mean()) - before
+
+    assert drift[1.0] > drift[0.5], (
+        "pure episodic replay no longer damages the schema more than the "
+        f"mixture ({drift[1.0]:+.4f} vs {drift[0.5]:+.4f}); re-derive the default"
+    )
