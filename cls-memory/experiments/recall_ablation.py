@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import math
+import pathlib
 import time
 from collections import Counter
 
@@ -422,12 +423,118 @@ class HybridEmbedder:
         return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
 
+class BGEEmbedder:
+    """BAAI/bge-small-en-v1.5 — a real contextual sentence encoder.
+
+    The first representation here with word order and context. Everything else
+    in this file is a bag of tokens: lexical methods match strings, and averaged
+    word vectors have no notion of order, so neither can distinguish "the
+    contractor deleted the namespace" from "the namespace deleted the
+    contractor".
+
+    Two details that matter and are easy to get wrong:
+
+      * **CLS pooling, not mean pooling.** BGE is trained with the CLS token as
+        the sentence representation. Mean-pooling it silently degrades quality.
+      * **Asymmetric encoding.** BGE v1.5 expects a query instruction prefix on
+        *queries only*, never on documents. Omitting it is the single most
+        common way to under-measure this model on retrieval, and it is exactly
+        the query/document asymmetry the lexical rows here also suffer from.
+
+    Weights come from Qdrant's fastembed mirror, which is reachable where
+    HuggingFace is not. ONNX + tokenizers directly, so neither `fastembed` nor
+    `transformers` is required at run time.
+    """
+
+    URL = "https://storage.googleapis.com/qdrant-fastembed/fast-bge-small-en-v1.5.tar.gz"
+    QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
+    def __init__(
+        self,
+        model_dir: str | None = None,
+        *,
+        batch_size: int = 64,
+        use_query_prefix: bool = True,
+    ) -> None:
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
+
+        path = pathlib.Path(
+            model_dir or pathlib.Path(__file__).parent / "data" / "fast-bge-small-en-v1.5"
+        )
+        if not path.exists():
+            self._download(path)
+
+        self._tok = Tokenizer.from_file(str(path / "tokenizer.json"))
+        self._tok.enable_padding()
+        self._tok.enable_truncation(512)
+        onnx = path / "model_optimized.onnx"
+        if not onnx.exists():
+            onnx = path / "model.onnx"
+        self._sess = ort.InferenceSession(
+            str(onnx), providers=["CPUExecutionProvider"]
+        )
+        self._inputs = {i.name for i in self._sess.get_inputs()}
+        self.dim = int(self._sess.get_outputs()[0].shape[-1])
+        self.batch_size = batch_size
+        self.use_query_prefix = use_query_prefix
+
+    @classmethod
+    def _download(cls, path: pathlib.Path) -> None:
+        import tarfile
+        import urllib.request
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        archive = path.parent / "bge.tar.gz"
+        print(f"  fetching BGE weights -> {path} ...")
+        urllib.request.urlretrieve(cls.URL, archive)
+        with tarfile.open(archive) as tar:
+            tar.extractall(path.parent)
+        archive.unlink(missing_ok=True)
+
+    def _forward(self, texts: list[str]) -> torch.Tensor:
+        rows = []
+        for start in range(0, len(texts), self.batch_size):
+            chunk = texts[start : start + self.batch_size]
+            encoded = self._tok.encode_batch(chunk)
+            feed = {
+                "input_ids": torch.tensor(
+                    [e.ids for e in encoded], dtype=torch.int64
+                ).numpy(),
+                "attention_mask": torch.tensor(
+                    [e.attention_mask for e in encoded], dtype=torch.int64
+                ).numpy(),
+            }
+            if "token_type_ids" in self._inputs:
+                feed["token_type_ids"] = feed["input_ids"] * 0
+            out = self._sess.run(
+                None, {k: v for k, v in feed.items() if k in self._inputs}
+            )[0]
+            rows.append(torch.tensor(out[:, 0]))  # CLS token
+        stacked = torch.cat(rows, dim=0)
+        return stacked / stacked.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        return self._forward(list(texts))
+
+    def encode_query(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        if self.use_query_prefix:
+            texts = [self.QUERY_PREFIX + t for t in texts]
+        return self._forward(list(texts))
+
+
 def dense_knn_ranker(conv, embedder):
     turns = conv.turns
     matrix = embedder.encode([t.memory_text for t in turns])
+    # Honour asymmetric encoders (BGE and friends) when they provide it.
+    encode_query = getattr(embedder, "encode_query", embedder.encode)
 
     def rank(question: str) -> list[str]:
-        q = embedder.encode([question])[0]
+        q = encode_query([question])[0]
         order = torch.topk(matrix @ q, min(10, len(turns))).indices.tolist()
         return [turns[i].dia_id for i in order]
 
@@ -566,6 +673,24 @@ def main() -> None:
             )
     except (ImportError, OSError) as exc:
         print(f"  [skipped spaCy rows: {exc}]")
+
+    # A real contextual encoder -- the first row with word order.
+    try:
+        bge = BGEEmbedder()
+        score_ranking(conversations, lambda c, e=bge: dense_knn_ranker(c, e),
+                      f"dense kNN, BGE-small-v1.5 ({bge.dim}d, query prefix)")
+        bare = BGEEmbedder(use_query_prefix=False)
+        score_ranking(conversations, lambda c, e=bare: dense_knn_ranker(c, e),
+                      "dense kNN, BGE-small-v1.5 (no query prefix)")
+        lex = HashedProjection(corpus, dim=4096, weighting="bm25", seed=SEED)
+        for alpha in (0.5, 0.3, 0.2):
+            score_ranking(
+                conversations,
+                lambda c, e=HybridEmbedder(lex, bge, alpha=alpha): dense_knn_ranker(c, e),
+                f"dense kNN, HYBRID RP-4096 + BGE (alpha={alpha:g} lexical)",
+            )
+    except (ImportError, OSError) as exc:
+        print(f"  [skipped BGE rows: {exc}]")
 
     print("\nFULL PIPELINE (VAE latent -> DG key -> Hopfield settling)")
     lsa256 = LatentSemanticEmbedder(dim=256, seed=SEED).fit(corpus)

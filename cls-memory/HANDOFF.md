@@ -198,22 +198,56 @@ Best configuration in the project is the hybrid at alpha 0.4-0.5:
 **0.360@1, 0.603@5, 0.682@10**, against the current default's 0.251@1. Note the
 optimum is *semantic-dominant*, the opposite of what the flawed test suggested.
 
-**Still untested: an actual transformer.** These are static, order-insensitive
-word vectors. A contextual sentence encoder is a different and probably larger
-step, and it is genuinely unreachable from this environment — HuggingFace, its
-mirror and CDN, Qdrant's CDN, Stanford NLP, fbaipublicfiles and GitHub LFS are
-all rejected at the proxy. Only PyPI, `raw.githubusercontent.com` (non-LFS) and
-GitHub *release* assets pass, which is how spaCy models get in. If you run this
-with network access, try a sentence encoder first.
+**A real transformer: BGE-small-en-v1.5 — reachable after all.** Qdrant's
+fastembed mirror on `storage.googleapis.com` serves the ONNX weights, and that
+host is *not* proxy-blocked. An earlier probe here recorded it as blocked; that
+probe used a wrong object key (the objects are prefixed `fast-`) and GCS
+answered 403, which was misread as a policy denial. HuggingFace, hf-mirror,
+cdn-lfs, ModelScope, Kaggle, gitee, Stanford NLP, fbaipublicfiles and GitHub
+LFS genuinely are blocked; PyPI, non-LFS `raw.githubusercontent.com`, GitHub
+*release* assets and `storage.googleapis.com` are not.
 
-**Revised task 1.1:** promote the hybrid, not just the projection.
+`BGEEmbedder` (in the ablation) drives ONNX + `tokenizers` directly, so neither
+`fastembed` nor `transformers` is needed at run time, and it fetches the weights
+on first use.
+
+| ranking (kNN ceiling) | @1 | @5 | @10 |
+|---|---|---|---|
+| BM25-weighted RP-4096 (best lexical) | 0.330 | 0.581 | 0.640 |
+| BGE-small, with query prefix | 0.269 | 0.543 | 0.676 |
+| BGE-small, no query prefix | 0.257 | 0.547 | 0.654 |
+| hybrid RP-4096 + spaCy SIF (alpha=0.4) | 0.360 | 0.603 | 0.662 |
+| **hybrid RP-4096 + BGE (alpha=0.5)** | **0.393** | **0.644** | **0.749** |
+| hybrid RP-4096 + BGE (alpha=0.3) | 0.322 | 0.601 | 0.723 |
+
+Three things worth internalising:
+
+1. **BGE alone loses to lexical at recall@1** (0.269 vs 0.330) while *winning*
+   at recall@10 (0.676 vs 0.640). That is the expected shape for entity-heavy
+   short-query retrieval — LoCoMo questions name specific people, dates and
+   events, and exact matching is hard to beat at rank 1. A dense encoder is not
+   a drop-in replacement for lexical retrieval on this task.
+2. **The hybrid is decisively best**: 0.393@1 and 0.749@10 against the current
+   default's 0.251@1 / 0.609@10 — +57% relative at rank 1. The two halves fail
+   differently, which is exactly why combining them pays.
+3. **The query prefix matters** (0.269 vs 0.257). BGE v1.5 is asymmetric: the
+   instruction goes on queries only, never on documents.
+
+**Revised task 1.1:** promote the lexical + BGE hybrid.
 1. Move `HashedProjection` into `cls_memory/embeddings.py` (BM25 weighting,
    dim 4096).
-2. Move `SpacyVectorEmbedder` (SIF pooling, `en_core_web_lg`) alongside it, with
-   spaCy as an **optional** dependency — the lexical half must still work alone.
-3. Move `HybridEmbedder`, default alpha 0.5.
-4. Re-measure on both corpora, add tests, check the memory footprint: 4096+300
-   dense dims per memory is ~4.3x the current 1024.
+2. Move `BGEEmbedder` alongside it. Keep the weights download lazy and
+   `onnxruntime`/`tokenizers` **optional** — the lexical half must still work
+   without them, since the GCS mirror may not be reachable everywhere.
+3. Move `HybridEmbedder`, default `alpha=0.5`.
+4. Re-measure on **both** corpora, add tests, and check the footprint:
+   4096+384 dense dims per memory is ~4.4x the current 1024. If that is too
+   much, test RP-1024 + BGE — RP-1024 alone scores 0.306 against RP-4096's
+   0.322, so the lexical half may not need full width once BGE carries
+   recall@10.
+5. `SpacyVectorEmbedder` is superseded and can be dropped, unless you want a
+   fallback with a different reachability profile (spaCy models come from
+   GitHub releases, BGE from GCS).
 
 ### 3.2 The fallback, and probably the better system anyway
 
