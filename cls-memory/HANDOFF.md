@@ -233,6 +233,37 @@ Three things worth internalising:
 3. **The query prefix matters** (0.269 vs 0.257). BGE v1.5 is asymmetric: the
    instruction goes on queries only, never on documents.
 
+### 3.1c fastembed works, and the *bigger* encoder does not help
+
+**fastembed is a usable route here.** It tries HuggingFace, logs a failure, and
+falls back to a direct URL for the four models that still carry one —
+`BAAI/bge-base-en-v1.5`, `bge-base-en`, `bge-small-en`, `bge-small-zh-v1.5`.
+`bge-small-en-v1.5` is *not* one of them (its `sources.url` is `None`), which is
+why that one had to be fetched from the GCS tarball by hand.
+
+So there are two independent routes to a transformer here, and they cover
+different models:
+
+| route | models | notes |
+|---|---|---|
+| GCS tarball + ONNX directly (`BGEEmbedder`) | any `fast-*.tar.gz` object | no fastembed dependency |
+| `fastembed` with `cache_dir` | the 4 with a URL source | falls back automatically |
+
+**The bigger model is worse.** `bge-base-en-v1.5` (768d, stronger on MTEB)
+against `bge-small-en-v1.5` (384d), same harness, 3 conversations:
+
+| | @1 | @5 | @10 |
+|---|---|---|---|
+| BGE-base alone | 0.245 | 0.524 | 0.668 |
+| BGE-small alone | 0.269 | 0.543 | 0.676 |
+| hybrid + BGE-base (alpha=0.5) | 0.372 | 0.636 | 0.735 |
+| **hybrid + BGE-small (alpha=0.5)** | **0.393** | **0.644** | **0.749** |
+
+Base loses on every metric and is ~8x slower per row. Do not reach for a larger
+encoder on this task — it is entity-heavy exact-match retrieval where the
+lexical half carries rank-1, and a stronger semantic model does not change that.
+`experiments/bge_base_probe.py` reproduces this.
+
 **Revised task 1.1:** promote the lexical + BGE hybrid.
 1. Move `HashedProjection` into `cls_memory/embeddings.py` (BM25 weighting,
    dim 4096).
