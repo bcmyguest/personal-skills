@@ -4,8 +4,12 @@ For whoever picks this up next. Written at commit `67f98cc` on branch
 `claude/cls-organizational-memory-poc-s9afk0`.
 
 **The one open task is recall.** Everything else is either done, measured, or
-explicitly listed below as a known limitation. Section 3 is the actual work;
-sections 1–2 are the context you need to not redo it.
+explicitly listed below as a known limitation.
+
+- **§3A is the ordered plan** — priorities, blockers, critical path. Start there.
+- §3 is the reasoning behind it; §1–2 are the context you need to not redo work.
+- §5 is the failure pattern this project keeps repeating. Read it before
+  trusting your own fixes.
 
 ---
 
@@ -184,6 +188,77 @@ change that helps one and hurts the other is overfitting, and that has already
 happened once here (`key=EMBEDDING` cost QMSum recall@5 0.526 → 0.421 while
 helping recall@1). Beating 0.320@1 on LoCoMo means you have passed the sparse
 ceiling; anything at or above ~0.30 is a real result.
+
+---
+
+## 3A. Ordered plan, with blockers
+
+Priority is expected-value-per-effort, but **the ordering below is driven by
+dependencies, not by size**. Two rules produce most of it:
+
+1. *Fix the measurement before optimising against it.* Two of the numbers you
+   would judge success by are currently too weak to judge with.
+2. *Change one variable at a time.* The embedder question must settle before
+   anything that changes what gets indexed, or you cannot attribute the result.
+
+### P0 — make the verdict trustworthy (do first, ~half a day)
+
+| # | Task | Blocks | Blocked by | Why first |
+|---|---|---|---|---|
+| 0.1 | Widen the QMSum slice well beyond 6 meetings / 38 questions | every recall verdict | — | 38 questions cannot separate a real gain from noise, and QMSum is half the overfitting guard. Cheap: `qmsum.load(max_meetings=...)`, 35 meetings and 244 queries are already in the file. |
+| 0.2 | Add random-projection and BM25-weighted rows to the **ceilings** section of `recall_ablation.py` | 1.1, 1.2 | — | Decides which of the two recall routes is worth building, without writing production code. A ceiling row is ~20 lines. |
+| 0.3 | If network allows, add a `SentenceTransformerEmbedder` ceiling row | 1.1, 1.2 (may moot both) | network access to HuggingFace | Biggest single unknown. Could make the dense-embedding work irrelevant, or reveal a pipeline ceiling nobody has hit. Do not block on it — it may never be available here. |
+
+### P1 — the recall work (gated on P0)
+
+| # | Task | Blocks | Blocked by | Notes |
+|---|---|---|---|---|
+| 1.1 | Random-projection embedder (signed feature hashing over TF-IDF) | — | 0.2 | Do **only if** 0.2 shows RP-1024 clearly beating LSA-1024's 0.255@1. Drops into the `Embedder` protocol with no other changes — lowest-risk route to the 0.320 ceiling. |
+| 1.2 | Hybrid sparse shortlist + masked Hopfield logits | — | 0.2 | The higher-ceiling option and the likely end state, because it *starts* from 0.320 rather than approximating it. Heavier: masking changes the normalising constant, so `log_density`/`basin_depth` become shortlist-conditional. Do this if 1.1 underdelivers, or straight away if 0.2 shows RP is not enough. |
+
+**1.1 and 1.2 are alternatives, not a sequence.** Pick from 0.2's numbers. Doing
+both is only worth it if 1.1 lands close to the ceiling and you want the last
+few points.
+
+### P2 — compose on top (only after P1 settles)
+
+| # | Task | Blocked by | Notes |
+|---|---|---|---|
+| 2.1 | `max_iter=1` for free cues | — (independent) | The one item with no dependencies at all — a freebie, safe to land any time. One step is the Tweedie denoiser and was never worse in probing. |
+| 2.2 | Context windows (index `turn ± 1`, keep per-turn identity) | 1.1/1.2 | Changes *what is indexed*, so measuring it against a moving embedder confounds both. Plausibly large on LoCoMo dialogue, plausibly negative on QMSum spans — 0.1 matters here. |
+| 2.3 | Query-side asymmetry (BM25 saturation + length norm) | 0.2 | Partly absorbed by 0.2 if you add the BM25-weighted row; whatever is left is a small refinement. |
+
+### P3 — correctness and evaluation debt (does not block recall)
+
+| # | Task | Blocks | Notes |
+|---|---|---|---|
+| 3.1 | Fix `significance.py`'s confound (deep-copy the store per arm, counterbalance arm order) | any statistical claim about `episodic_ratio` | The consolidation trade-off currently has **no** statistical backing. Not on the recall path, but it is the one place where a quoted number would be unsupported — which is why none is quoted. |
+| 3.2 | Control the novelty gate for turn length (`corr = −0.48`) | trusting the gate on real text | Separate mechanism from retrieval. Matters for what *enters* the store, not what comes back. |
+| 3.3 | Make `half_life_days` a per-source setting | realistic multi-source deployments | Currently global and wrong for anything on a multi-month cadence. |
+
+### P4 — deployment blockers (out of scope for recall, in scope before any pilot)
+
+| # | Task | Notes |
+|---|---|---|
+| 4.1 | Per-memory ACLs enforced **before** retrieval | Filtering after settling leaks information through the attractor. This is a correctness requirement, not a feature. |
+| 4.2 | Persistence beyond `state_dict` | Records are plain dataclasses holding tensors; serialisation is straightforward but unwritten. |
+| 4.3 | Honour `MemorySystemConfig.device` | Declared and ignored; ancillary tensor construction in `hippocampus`/`energy` is CPU-bound. |
+| 4.4 | Housekeeping: drop the `record.key` duplicate, keep capacity across `remove()`, batch `basin_depth`, move `occlude` off the read path | All cosmetic or constant-factor. Cheapest last. |
+
+### Critical path
+
+```
+0.1 (widen QMSum) ──┐
+                    ├──▶ 0.2 (ceilings) ──▶ 1.1 or 1.2 ──▶ 2.2 ──▶ done
+0.3 (encoder, if network) ──┘
+```
+
+Everything in P3 and P4 is off this path and can proceed in parallel or later.
+2.1 is off it too and can land whenever.
+
+**If you only have an hour:** do 0.2. It tells you which of the two real options
+to build, and it is the difference between choosing on evidence and choosing on
+taste.
 
 ---
 
