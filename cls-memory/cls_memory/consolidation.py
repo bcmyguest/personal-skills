@@ -175,11 +175,18 @@ class ConsolidationEngine:
         if n <= 0:
             return torch.empty(0, self.cortex.config.input_dim)
         c = self.config
+        landscape = self._latent_landscape()
         latents = langevin_replay(
-            self._latent_landscape(),
+            landscape,
             n,
             steps=c.replay_steps,
-            step_size=c.replay_step_size,
+            # Same ULA divergence bound as the episodic half (eta > 4/beta
+            # diverges), applied here too. This landscape runs at the
+            # *hippocampal* beta, which is a retrieval knob -- at beta=128 the
+            # bound is 0.031 against a configured step of 0.05, and samples were
+            # measured blowing up 1e6x and being fed straight into cortex.fit
+            # with `improved=True` reported.
+            step_size=min(c.replay_step_size, 1.0 / landscape.config.beta),
             generator=generator,
         )
         with torch.no_grad():
@@ -240,9 +247,13 @@ class ConsolidationEngine:
             n_replay = c.replay_batch
         replayed = self.replay(max(n_replay, 0), generator=generator)
 
-        batch = torch.cat([t for t in (new_data, replayed) if t.numel() > 0], dim=0)
-        if batch.shape[0] == 0:
+        # Guard BEFORE the cat: torch.cat([]) raises, so the old guard below it
+        # was unreachable and sleep() on a fresh system died with an opaque
+        # torch error instead of returning the empty report intended here.
+        parts = [t for t in (new_data, replayed) if t.numel() > 0]
+        if not parts:
             return ConsolidationReport(0, 0, 0, 0.0, 0.0, 0)
+        batch = torch.cat(parts, dim=0)
 
         with torch.no_grad():
             loss_before = float(self.cortex.elbo_loss(batch)[0])

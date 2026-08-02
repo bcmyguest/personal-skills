@@ -16,7 +16,15 @@ from .pattern_separation import HippocampalKey
 class CortexConfig:
     """Slow-learning neocortex (VAE) hyperparameters."""
 
-    input_dim: int = 384
+    input_dim: int = 1024
+    """Embedding width, and so the fitted embedder's target rank.
+
+    1024, not 384. Retrieval is embedder-bound and the dimension is the binding
+    constraint on a truncated-SVD embedder: measured kNN recall@1 on LoCoMo runs
+    0.077 (hashing-256), 0.174 (LSA-256), 0.255 (LSA-1024) against 0.320 for
+    sparse TF-IDF with no reduction at all. Going wider costs memory linearly
+    and buys most of that gap back. Lower it for small corpora -- the rank
+    cannot exceed the number of documents, and bootstrap() warns when it."""
     hidden_dims: tuple[int, ...] = (256, 128)
     latent_dim: int = 64
     kl_weight: float = 0.01
@@ -67,11 +75,21 @@ class NoveltyConfig:
 class HopfieldConfig:
     """Fast-learning hippocampus (Modern Hopfield Network) hyperparameters."""
 
-    beta: float = 8.0
-    """Inverse temperature. Ramsauer et al. (2021): high beta -> sharp, single
-    pattern attractors (episodic recall); low beta -> metastable mixtures over
-    many patterns (gist / schema recall). Also equals 1/sigma^2 of the
-    equivalent diffusion noise level -- see cls_memory.energy."""
+    beta: float = 128.0
+    """Inverse temperature. High beta -> sharp single-pattern attractors
+    (episodic recall); low beta -> metastable mixtures (gist / schema recall).
+    Also equals 1/sigma^2 of the equivalent diffusion noise level (energy.py).
+
+    128, not the 8.0 this shipped with. Retrieval needs beta*Delta_i to be
+    comfortably large, and real embeddings are not well separated: measured DG
+    keys for unrelated text sit at cosine ~0.71, giving Delta=0.29, so beta=8
+    put beta*Delta at 2.3 and **every query settled onto one global mixture** --
+    six distinct cues produced six settled states at pairwise cosine 1.0000,
+    with `converged=True` reporting success. On LoCoMo that regime scores
+    recall@1 0.004 against 0.172 at beta=128.
+
+    Rule of thumb: keep beta * min_i effective_separation(i) above ~6. Lower
+    beta deliberately, per query, when you want a gist (see gist())."""
     max_iter: int = 32
     tol: float = 1e-5
     """L2 change in the state below which the update is considered settled.
@@ -95,7 +113,15 @@ class KeyConfig:
     Set `mode=HippocampalKey.LATENT` to restore the original design.
     """
 
-    mode: HippocampalKey = HippocampalKey.SEPARATED
+    mode: HippocampalKey = HippocampalKey.EMBEDDING
+    """EMBEDDING, not SEPARATED. Dentate-gyrus separation was adopted because it
+    beat the VAE latent on synthetic data (5/5 vs 2/5), and it still does -- but
+    against the raw embedding on *real* text it is a net loss: LoCoMo recall@1
+    0.121 separated vs 0.150 embedding at matched beta, and raising sparsity_k
+    to 512 or 1024 does not recover it (0.117, 0.113). Sparsification discards
+    lexical detail that real retrieval needs, which a 12-template synthetic
+    corpus could not reveal. SEPARATED remains available and is the right choice
+    when episodes are genuinely near-duplicate."""
     expansion_dim: int = 1024
     sparsity_k: int = 256
 
@@ -205,6 +231,13 @@ class ConsolidationConfig:
     """Never consolidation-prune evergreen records, even once predictable."""
 
 
+def _check_range(name: str, value: float, lo: float, hi: float, *, inclusive=True) -> None:
+    ok = lo <= value <= hi if inclusive else lo < value < hi
+    if not ok:
+        bounds = f"[{lo}, {hi}]" if inclusive else f"({lo}, {hi})"
+        raise ValueError(f"{name} must be in {bounds}, got {value}")
+
+
 @dataclass
 class MemorySystemConfig:
     """Top-level container."""
@@ -218,3 +251,34 @@ class MemorySystemConfig:
     consolidation: ConsolidationConfig = field(default_factory=ConsolidationConfig)
     seed: int = 0
     device: str = "cpu"
+
+    def __post_init__(self) -> None:
+        """Validate at construction, not at first use.
+
+        Several of these previously surfaced only deep inside a run -- an
+        out-of-range quantile raised from torch *after* the cortex had trained,
+        and relative_drop >= 1 silently reintroduced a defect this project had
+        already fixed once (it pruned 2 of 3 memories from an untouched cortex).
+        """
+        _check_range("novelty.quantile", self.novelty.quantile, 0.0, 1.0)
+        _check_range("hopfield.beta", self.hopfield.beta, 0.0, float("inf"), inclusive=False)
+        _check_range(
+            "hopfield.mixture_threshold", self.hopfield.mixture_threshold, 0.0, 1.0
+        )
+        _check_range(
+            "ingestion.duplicate_similarity",
+            self.ingestion.duplicate_similarity, 0.0, 1.0, inclusive=False,
+        )
+        _check_range(
+            "consolidation.relative_drop",
+            self.consolidation.relative_drop, 0.0, 1.0, inclusive=False,
+        )
+        _check_range(
+            "consolidation.replay_sigma",
+            self.consolidation.replay_sigma, 0.0, float("inf"), inclusive=False,
+        )
+        _check_range(
+            "consolidation.episodic_ratio", self.consolidation.episodic_ratio, 0.0, 1.0
+        )
+        _check_range("decay.half_life_days", self.decay.half_life_days, 0.0,
+                     float("inf"), inclusive=False)

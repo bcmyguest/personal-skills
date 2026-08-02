@@ -29,8 +29,10 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 `experiments/benchmark_locomo.py` on **real conversational data with
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
 
-> Read RESULTS.md Part II before quoting any number from Part I. On real data
-> retrieval recall@1 is 0.121, against 1.000 on the synthetic corpus. Everything below
+> Read RESULTS.md Parts II and III before quoting any number from Part I.
+> On real data retrieval recall@1 is 0.251 (LoCoMo) and 0.395 (QMSum), against
+> 1.000 on the synthetic corpus. Part III diagnoses and fixes a default that
+> collapsed retrieval entirely. Everything below
 labelled "measured" was measured in this repo, not assumed.
 
 The package has been through an adversarial review; the defects it found and
@@ -308,11 +310,11 @@ and blows the samples up by ~1300× (asserted in
 
 ## 9. Known limitations
 
-- **Retrieval is bounded by the embedder, and the gap is large.** Measured on
-  real dialogue (LoCoMo), recall@1 is 0.121 against 1.000 on the synthetic
-  corpus. `LatentSemanticEmbedder` is the default and roughly 4x the old
-  hashing one, but it is still a bag of n-grams. Swap in a sentence encoder for
-  real use — see RESULTS.md Part II.
+- **Retrieval is bounded by the embedder.** After the Part III fixes, recall@1
+  is 0.251 on LoCoMo and 0.395 on QMSum against 1.000 on synthetic data. Sparse
+  TF-IDF still beats the best dense configuration on its own ceiling (0.320 vs
+  0.255), so a sparse-shortlist hybrid is the obvious unimplemented next step.
+  Swap in a sentence encoder for real use.
 - **The novelty gate is partly a length filter on real text**: correlation
   between surprise and turn length is −0.48 on LoCoMo, where the synthetic
   corpus (uniform-length documents) hid the effect entirely.

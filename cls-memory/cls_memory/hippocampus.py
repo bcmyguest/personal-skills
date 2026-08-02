@@ -123,6 +123,18 @@ class ModernHopfieldNetwork(torch.nn.Module):
             x = x.unsqueeze(0)
         if x.shape[-1] != self.dim:
             raise ValueError(f"expected patterns of dim {self.dim}, got {x.shape[-1]}")
+        # One NaN or Inf row poisons energy, attention, step, retrieve,
+        # log_density and replay for the WHOLE store, for every query,
+        # permanently and silently. Reject at the boundary; the check is one
+        # pass over the new rows.
+        if not torch.isfinite(x).all():
+            raise ValueError("patterns must be finite; got NaN or Inf")
+        if (x.norm(dim=-1) < 1e-8).any():
+            raise ValueError(
+                "zero-norm pattern: such a row has logit log(w) regardless of the "
+                "query and outranks any real memory below cosine 0.5, silently "
+                "hijacking retrieval. Reject the source text instead."
+            )
         if self.config.normalize_patterns:
             x = _normalize(x)
 
@@ -152,6 +164,8 @@ class ModernHopfieldNetwork(torch.nn.Module):
     def set_log_prior(self, log_prior: Tensor) -> None:
         """Refresh all salience weights at once (called by the decay sweep)."""
         log_prior = log_prior.reshape(-1).to(self.log_prior.dtype)
+        if not torch.isfinite(log_prior).all():
+            raise ValueError("log_prior must be finite; got NaN or Inf")
         if log_prior.shape[0] != len(self):
             raise ValueError("log_prior length must match the number of patterns")
         self.log_prior = log_prior.detach()
