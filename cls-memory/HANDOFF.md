@@ -113,7 +113,7 @@ relative. That gap is the task.
 
 ## 3. The task: close the gap to the sparse ceiling
 
-### 3.1 The leading hypothesis (untested — this is where I stopped)
+### 3.1 The leading hypothesis — CONFIRMED on a smoke test, needs the full run
 
 **Random projection should beat truncated SVD at equal dimension.**
 
@@ -136,10 +136,29 @@ for each term, hash to `k` output indices with random signs, accumulate
 existing vocabulary/IDF pass, and it drops straight into the existing
 `Embedder` protocol (`dim`, `encode`) with **no changes anywhere else**.
 
-**Test it as a ceiling first**, before writing production code — add rows to
-`experiments/recall_ablation.py` under "RETRIEVAL CEILINGS":
-random projection at 1024 / 2048 / 4096, and a BM25-weighted variant. If RP-1024
-does not clearly beat LSA-1024's 0.255, abandon this and go to 3.2.
+**The ceiling rows now exist** (`HashedProjection` in
+`experiments/recall_ablation.py`, already satisfying the `Embedder` protocol).
+On a **one-conversation** smoke test — 419 turns, so treat it as indicative:
+
+| ranking | recall@1 | recall@5 |
+|---|---|---|
+| LSA-1024 (current default) | 0.250 | 0.515 |
+| TF-IDF sparse (the "ceiling") | 0.311 | 0.582 |
+| random-projection-1024 | 0.286 | 0.520 |
+| random-projection-2048 | 0.306 | 0.546 |
+| **random-projection-4096** | **0.327** | 0.556 |
+| **BM25-weighted RP-4096** | **0.332** | 0.571 |
+
+Random projection does not merely approach the sparse ceiling — at 4096 it
+**passes** it, and BM25 term weighting adds a little more. This is what the
+hypothesis predicted: SVD discards the tail, JL preserves it.
+
+**Confirm on the full 3-conversation set before promoting anything** (run
+`./run-next-step.sh`). If it holds, task 1.1 becomes: move `HashedProjection`
+into `cls_memory/embeddings.py`, make it the default at dim 4096, add tests,
+re-measure on both corpora. Note 4096-d dense keys are 4x the memory of the
+current 1024 — check the footprint before committing to it, and test whether
+2048 is the better trade.
 
 ### 3.2 The fallback, and probably the better system anyway
 

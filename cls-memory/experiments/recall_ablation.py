@@ -28,6 +28,7 @@ Baselines included on purpose:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
 import time
 from collections import Counter
@@ -176,6 +177,113 @@ class BM25Index:
         return [i for i, _ in ordered[:top]]
 
 
+class HashedProjection:
+    """Signed feature hashing of TF-IDF into a dense vector — a JL projection.
+
+    The alternative to truncated SVD, and the hypothesis this ablation exists
+    to test. SVD keeps the top-k directions and *discards the tail entirely*;
+    for short-query retrieval the discriminative signal lives in rare terms,
+    which are exactly the tail. A Johnson-Lindenstrauss projection instead
+    preserves every direction approximately, with distortion O(sqrt(log n / d)).
+
+    Implemented as signed feature hashing rather than an explicit V x d matrix:
+    each term hashes to `k` output coordinates with random signs. No large
+    allocation, no fitting beyond the vocabulary/IDF pass, and it satisfies the
+    `Embedder` protocol (`dim`, `encode`) so it drops into the pipeline
+    unchanged if the numbers justify promoting it.
+
+    `weighting="bm25"` swaps TF-IDF for BM25 term weights (saturating term
+    frequency, length normalisation), which matter when documents are ~15-word
+    dialogue turns.
+    """
+
+    def __init__(
+        self,
+        docs: list[str],
+        *,
+        dim: int = 1024,
+        hashes: int = 2,
+        weighting: str = "tfidf",
+        k1: float = 1.5,
+        b: float = 0.75,
+        char_ngrams=(3, 5),
+        seed: int = 0,
+    ) -> None:
+        self.dim = dim
+        self.hashes = hashes
+        self.weighting = weighting
+        self.k1, self.b = k1, b
+        self.char_ngrams = char_ngrams
+        self.seed = seed
+        self._cache: dict[str, tuple[tuple[int, ...], tuple[float, ...]]] = {}
+
+        df: Counter = Counter()
+        lengths = []
+        for doc in docs:
+            terms = self._terms(doc)
+            lengths.append(len(terms))
+            df.update(set(terms))
+        n = len(docs)
+        self.avg_len = sum(lengths) / max(n, 1)
+        if weighting == "bm25":
+            self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
+        else:
+            self.idf = {t: math.log((1 + n) / (1 + c)) + 1.0 for t, c in df.items()}
+
+    def _terms(self, text: str) -> list[str]:
+        tokens = _tokenize(text)
+        terms = list(tokens)
+        terms += [" ".join(tokens[i : i + 2]) for i in range(len(tokens) - 1)]
+        if self.char_ngrams:
+            lo, hi = self.char_ngrams
+            padded = f" {text.lower().strip()} "
+            for n in range(lo, hi + 1):
+                terms += [padded[i : i + n] for i in range(len(padded) - n + 1)]
+        return terms
+
+    def _slots(self, term: str) -> tuple[tuple[int, ...], tuple[float, ...]]:
+        """Deterministic (indices, signs) for a term. Cached — the same terms
+        recur constantly across a corpus."""
+        hit = self._cache.get(term)
+        if hit is not None:
+            return hit
+        indices, signs = [], []
+        for j in range(self.hashes):
+            digest = hashlib.blake2b(
+                f"{self.seed}:{j}:{term}".encode("utf-8"), digest_size=8
+            ).digest()
+            value = int.from_bytes(digest, "little")
+            indices.append(value % self.dim)
+            signs.append(1.0 if (value >> 63) & 1 else -1.0)
+        hit = (tuple(indices), tuple(signs))
+        self._cache[term] = hit
+        return hit
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        out = torch.zeros(len(texts), self.dim)
+        scale = 1.0 / math.sqrt(self.hashes)
+        for row, text in enumerate(texts):
+            counts = Counter(self._terms(text))
+            length = sum(counts.values())
+            for term, freq in counts.items():
+                idf = self.idf.get(term)
+                if idf is None:
+                    continue
+                if self.weighting == "bm25":
+                    denom = freq + self.k1 * (
+                        1 - self.b + self.b * length / max(self.avg_len, 1e-9)
+                    )
+                    weight = idf * freq * (self.k1 + 1) / denom
+                else:
+                    weight = (1.0 + math.log(freq)) * idf
+                indices, signs = self._slots(term)
+                for idx, sign in zip(indices, signs):
+                    out[row, idx] += weight * sign * scale
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
 def dense_knn_ranker(conv, embedder):
     turns = conv.turns
     matrix = embedder.encode([t.memory_text for t in turns])
@@ -277,6 +385,17 @@ def main() -> None:
         lsa = LatentSemanticEmbedder(dim=dim, seed=SEED).fit(corpus)
         score_ranking(conversations, lambda c, e=lsa: dense_knn_ranker(c, e),
                       f"dense kNN, LSA-{dim} (rank {lsa.rank})")
+
+    # The hypothesis under test: random projection should beat truncated SVD at
+    # equal dim, because SVD discards the tail where the retrieval signal lives.
+    for dim in (1024, 2048, 4096):
+        rp = HashedProjection(corpus, dim=dim, seed=SEED)
+        score_ranking(conversations, lambda c, e=rp: dense_knn_ranker(c, e),
+                      f"dense kNN, random-projection-{dim}")
+    for dim in (1024, 4096):
+        rp = HashedProjection(corpus, dim=dim, weighting="bm25", seed=SEED)
+        score_ranking(conversations, lambda c, e=rp: dense_knn_ranker(c, e),
+                      f"dense kNN, BM25-weighted RP-{dim}")
 
     print("\nFULL PIPELINE (VAE latent -> DG key -> Hopfield settling)")
     lsa256 = LatentSemanticEmbedder(dim=256, seed=SEED).fit(corpus)

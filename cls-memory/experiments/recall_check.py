@@ -105,7 +105,7 @@ def evaluate(conversations, *, dim: int, key_mode: HippocampalKey, beta: float) 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--locomo", type=int, default=3)
-    parser.add_argument("--qmsum", type=int, default=6)
+    parser.add_argument("--qmsum", type=int, default=25)
     args = parser.parse_args()
     torch.manual_seed(SEED)
 
