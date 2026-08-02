@@ -22,6 +22,9 @@ of organizational life slowly and with interleaving. The hippocampus stores
 *individual episodes* in one shot. Novelty decides which one gets the write, and
 consolidation moves knowledge from fast to slow, then releases the fast copy.
 
+> **Picking this up?** Start with [HANDOFF.md](HANDOFF.md) — current state,
+> the one open task (recall), what is already verified, and the traps.
+
 ## Status
 
 131 tests pass. `examples/demo.py` runs the full lifecycle end to end.
