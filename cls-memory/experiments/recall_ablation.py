@@ -285,33 +285,38 @@ class HashedProjection:
 
 
 class SpacyVectorEmbedder:
-    """Averaged static word vectors — the first representation here that is not
-    purely lexical.
+    """Static word vectors, pooled properly.
 
-    Every other embedder in this file matches *strings*: hashing, TF-IDF, BM25
-    and random projection all fail identically on vocabulary mismatch, which is
-    the central QA failure mode ("when did she attend the meeting?" against
-    "I went yesterday"). Static word vectors put synonyms near each other, so
-    this is the first row that can bridge that gap.
+    A naive mean of word vectors is a weak baseline and it is not what the
+    literature means by "sentence embedding from word vectors". Three things
+    matter, and skipping them understates the representation badly:
 
-    It is still order-insensitive — an average of word vectors, not a sentence
-    encoder — so it trades the other way: averaging washes out the rare
-    discriminative terms that sparse retrieval lives on. `idf_weighted=True`
-    partially recovers that by weighting each token by its IDF, which is the
-    standard fix and usually worth several points.
+      * **L2-normalise each token vector before pooling.** Raw spaCy vector
+        norms vary several-fold with frequency, so an unnormalised mean is
+        dominated by whichever high-norm tokens happen to be present.
+      * **Frequency weighting.** `sif` uses Arora et al. (2017) smooth inverse
+        frequency, w = a / (a + p(word)), which downweights function words far
+        more aggressively than IDF and is the standard choice. `idf` is the
+        classic alternative.
+      * **Remove the first principal component.** Averaged word vectors share a
+        large common direction that carries no discriminative information;
+        subtracting it is the other half of SIF and is usually worth more than
+        the weighting.
 
-    Needs `spacy` plus a vector-bearing model. Installable without HuggingFace:
-        pip install spacy
-        pip install https://github.com/explosion/spacy-models/releases/download/\
-en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
+    `model="en_core_web_lg"` has 343k unique vectors against md's 20k shared
+    rows. Token *coverage* is 99.8% either way -- md maps 500k keys onto 20k
+    rows, so `has_vector` is true but the vector is coarser.
     """
 
     def __init__(
         self,
         docs: list[str] | None = None,
         *,
-        model: str = "en_core_web_md",
-        idf_weighted: bool = False,
+        model: str = "en_core_web_lg",
+        weighting: str = "sif",
+        remove_pc: bool = True,
+        normalize_tokens: bool = True,
+        sif_a: float = 1e-3,
     ) -> None:
         import spacy
 
@@ -320,35 +325,73 @@ en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
             exclude=["parser", "ner", "tagger", "lemmatizer", "attribute_ruler"],
         )
         self.dim = int(self._nlp.vocab.vectors.shape[1])
-        self.idf_weighted = idf_weighted
-        self.idf: dict[str, float] = {}
-        if idf_weighted:
-            if docs is None:
-                raise ValueError("idf_weighted needs the corpus to build IDF")
-            df: Counter = Counter()
-            for doc in docs:
-                df.update(set(_tokenize(doc)))
-            n = len(docs)
-            self.idf = {t: math.log((1 + n) / (1 + c)) + 1.0 for t, c in df.items()}
+        self.weighting = weighting
+        self.normalize_tokens = normalize_tokens
+        self.sif_a = sif_a
+        self.weights: dict[str, float] = {}
+        self._pc: torch.Tensor | None = None
 
-    def encode(self, texts) -> torch.Tensor:
-        if isinstance(texts, str):
-            texts = [texts]
+        if weighting in ("idf", "sif"):
+            if docs is None:
+                raise ValueError(f"weighting={weighting!r} needs the corpus")
+            counts: Counter = Counter()
+            doc_freq: Counter = Counter()
+            for doc in docs:
+                tokens = _tokenize(doc)
+                counts.update(tokens)
+                doc_freq.update(set(tokens))
+            n_docs = len(docs)
+            total = max(sum(counts.values()), 1)
+            if weighting == "idf":
+                self.weights = {
+                    t: math.log((1 + n_docs) / (1 + c)) + 1.0 for t, c in doc_freq.items()
+                }
+            else:
+                self.weights = {
+                    t: sif_a / (sif_a + c / total) for t, c in counts.items()
+                }
+
+        if remove_pc:
+            if docs is None:
+                raise ValueError("remove_pc needs the corpus")
+            matrix = self._pool(docs)
+            # First right singular vector of the pooled corpus: the common
+            # direction every sentence shares, which carries no signal.
+            _, _, vh = torch.linalg.svd(
+                matrix - matrix.mean(dim=0, keepdim=True), full_matrices=False
+            )
+            self._pc = vh[0]
+
+    def _pool(self, texts) -> torch.Tensor:
         out = torch.zeros(len(texts), self.dim)
+        default = 1.0 if self.weighting == "mean" else self.sif_a
         for row, doc in enumerate(self._nlp.pipe(list(texts), batch_size=256)):
             total = torch.zeros(self.dim)
             weight_sum = 0.0
             for token in doc:
                 if not token.has_vector or token.is_punct or token.is_space:
                     continue
+                vector = torch.tensor(token.vector)
+                if self.normalize_tokens:
+                    vector = vector / vector.norm().clamp_min(1e-9)
                 weight = (
-                    self.idf.get(token.lower_, 1.0) if self.idf_weighted else 1.0
+                    1.0
+                    if self.weighting == "mean"
+                    else self.weights.get(token.lower_, default)
                 )
-                total += weight * torch.tensor(token.vector)
+                total += weight * vector
                 weight_sum += weight
             if weight_sum:
                 total /= weight_sum
             out[row] = total
+        return out
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        out = self._pool(texts)
+        if self._pc is not None:
+            out = out - (out @ self._pc).unsqueeze(-1) * self._pc
         return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
 
@@ -493,17 +536,30 @@ def main() -> None:
                       f"dense kNN, BM25-weighted RP-{dim}")
 
     # Beyond bag-of-words. Every row above matches strings and fails the same
-    # way on paraphrase; these are the first that can bridge it.
+    # way on paraphrase; these are the first that can bridge it. Pooling is
+    # swept properly -- a naive mean is a strawman for word-vector embeddings.
     try:
-        plain = SpacyVectorEmbedder()
-        score_ranking(conversations, lambda c, e=plain: dense_knn_ranker(c, e),
-                      f"dense kNN, spaCy vectors ({plain.dim}d, mean)")
-        weighted = SpacyVectorEmbedder(corpus, idf_weighted=True)
-        score_ranking(conversations, lambda c, e=weighted: dense_knn_ranker(c, e),
-                      f"dense kNN, spaCy vectors ({weighted.dim}d, IDF-weighted)")
+        variants = [
+            ("mean, raw", dict(weighting="mean", remove_pc=False, normalize_tokens=False)),
+            ("mean, L2 tokens", dict(weighting="mean", remove_pc=False)),
+            ("IDF, L2 tokens", dict(weighting="idf", remove_pc=False)),
+            ("SIF, no PC removal", dict(weighting="sif", remove_pc=False)),
+            ("SIF + PC removal", dict(weighting="sif", remove_pc=True)),
+        ]
+        best_semantic, best_score, best_label = None, -1.0, ""
+        for label, kwargs in variants:
+            emb = SpacyVectorEmbedder(corpus, model="en_core_web_lg", **kwargs)
+            got = score_ranking(
+                conversations, lambda c, e=emb: dense_knn_ranker(c, e),
+                f"dense kNN, spaCy-lg {label}",
+            )
+            if got[1] > best_score:
+                best_semantic, best_score, best_label = emb, got[1], label
+
+        print(f"\n  best semantic pooling: {best_label} ({best_score:.3f}@1)")
         best_lexical = HashedProjection(corpus, dim=4096, weighting="bm25", seed=SEED)
-        for alpha in (0.7, 0.5, 0.3):
-            hybrid = HybridEmbedder(best_lexical, weighted, alpha=alpha)
+        for alpha in (0.8, 0.7, 0.6, 0.5, 0.4):
+            hybrid = HybridEmbedder(best_lexical, best_semantic, alpha=alpha)
             score_ranking(
                 conversations, lambda c, e=hybrid: dense_knn_ranker(c, e),
                 f"dense kNN, HYBRID RP-4096 + spaCy (alpha={alpha:g} lexical)",

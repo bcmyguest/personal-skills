@@ -153,44 +153,67 @@ Random projection does not merely approach the sparse ceiling — at 4096 it
 **passes** it, and BM25 term weighting adds a little more. This is what the
 hypothesis predicted: SVD discards the tail, JL preserves it.
 
-### 3.1b Confirmed on the full set, plus the bag-of-words question
+### 3.1b Confirmed on the full set — and the bag-of-words question, correctly
 
-Full 3-conversation LoCoMo run, 494 questions — these supersede the smoke test:
+Full 3-conversation LoCoMo run, 494 questions.
 
-| ranking (kNN ceiling) | recall@1 | recall@5 |
+**Lexical (bag of n-grams):**
+
+| ranking (kNN ceiling) | @1 | @5 | @10 |
+|---|---|---|---|
+| LSA-1024 (current default) | 0.251 | 0.526 | 0.609 |
+| TF-IDF sparse | 0.320 | 0.575 | 0.648 |
+| random-projection-4096 | 0.322 | 0.555 | 0.630 |
+| **BM25-weighted RP-4096** | **0.330** | 0.581 | 0.640 |
+
+**Semantic (spaCy `en_core_web_lg`, 343k vectors) — pooling matters enormously:**
+
+| pooling | @1 | @5 |
 |---|---|---|
-| LSA-1024 (current default) | 0.251 | 0.526 |
-| TF-IDF sparse | 0.320 | 0.575 |
-| random-projection-4096 | 0.322 | 0.555 |
-| BM25-weighted RP-4096 | 0.330 | 0.581 |
-| spaCy vectors, mean (**pure semantic**) | 0.071 | 0.176 |
-| spaCy vectors, IDF-weighted | 0.121 | 0.285 |
-| hybrid RP-4096 + spaCy, alpha=0.7 | 0.338 | 0.583 |
-| **hybrid RP-4096 + spaCy, alpha=0.5** | **0.348** | 0.571 |
-| hybrid, alpha=0.3 | 0.267 | 0.460 |
+| mean, raw vectors | 0.196 | 0.399 |
+| mean, L2-normalised tokens | 0.168 | 0.360 |
+| IDF-weighted, L2 tokens | 0.267 | 0.474 |
+| **SIF** (Arora et al. 2017) | **0.275** | 0.498 |
+| SIF + first-PC removal | 0.273 | **0.514** |
 
-Two findings, and the second is the counterintuitive one:
+**Hybrid (concatenate L2-normalised lexical and semantic, weight by alpha):**
 
-1. **Random projection beats truncated SVD, as predicted** — 0.330 vs 0.251,
-   and it passes the sparse TF-IDF ceiling. Promote it (task 1.1).
-2. **Moving *off* bag-of-words is a large regression.** Averaged static word
-   vectors score 0.121 against lexical's 0.330. Averaging destroys the rare
-   discriminative terms retrieval depends on, and no IDF weighting recovers it.
-   Moving *beyond* BOW — lexical plus semantic, concatenated and weighted —
-   is the best result in the project at 0.348, but that is +5.5% relative over
-   lexical alone, not a transformation. `alpha=0.3` (semantic-dominant) falls
-   back to 0.267, so the lexical half is doing most of the work at every mix.
+| alpha (lexical share) | @1 | @5 | @10 |
+|---|---|---|---|
+| 0.8 | 0.332 | 0.587 | 0.646 |
+| 0.6 | 0.358 | 0.599 | 0.666 |
+| 0.5 | 0.358 | 0.593 | **0.682** |
+| **0.4** | **0.360** | **0.603** | 0.662 |
 
-**This does not settle the transformer question.** spaCy vectors are
-order-insensitive and context-free; a real sentence encoder is a different bet
-and is still the largest untested lever (§3.4). Read the above as "averaged
-static word vectors are not the way off BOW", not "semantics do not help".
+**The correction that matters.** An earlier version of this section claimed
+"moving off bag-of-words is a large regression", from a semantic score of 0.121.
+That was wrong, and it was wrong for two avoidable reasons: it used
+`en_core_web_md` (20k shared vector rows rather than lg's 343k unique) and a
+naive unweighted mean. Pooled properly the same idea scores 0.275 — more than
+double, and above the current LSA default. **Do not conclude anything about
+representations from a naive mean of word vectors.** Token coverage was 99.8%
+for both models, so coverage was never the issue; weighting was.
 
-**Task 1.1, revised:** move `HashedProjection` into `cls_memory/embeddings.py`
-with BM25 weighting at dim 4096, make it the default, add tests, re-measure on
-both corpora. Then decide on the hybrid separately: it needs a spaCy dependency
-and an extra 300 dims for +0.018 recall@1, which may or may not be worth it.
-Check the memory footprint first — 4096-d dense keys are 4x the current 1024.
+Best configuration in the project is the hybrid at alpha 0.4-0.5:
+**0.360@1, 0.603@5, 0.682@10**, against the current default's 0.251@1. Note the
+optimum is *semantic-dominant*, the opposite of what the flawed test suggested.
+
+**Still untested: an actual transformer.** These are static, order-insensitive
+word vectors. A contextual sentence encoder is a different and probably larger
+step, and it is genuinely unreachable from this environment — HuggingFace, its
+mirror and CDN, Qdrant's CDN, Stanford NLP, fbaipublicfiles and GitHub LFS are
+all rejected at the proxy. Only PyPI, `raw.githubusercontent.com` (non-LFS) and
+GitHub *release* assets pass, which is how spaCy models get in. If you run this
+with network access, try a sentence encoder first.
+
+**Revised task 1.1:** promote the hybrid, not just the projection.
+1. Move `HashedProjection` into `cls_memory/embeddings.py` (BM25 weighting,
+   dim 4096).
+2. Move `SpacyVectorEmbedder` (SIF pooling, `en_core_web_lg`) alongside it, with
+   spaCy as an **optional** dependency — the lexical half must still work alone.
+3. Move `HybridEmbedder`, default alpha 0.5.
+4. Re-measure on both corpora, add tests, check the memory footprint: 4096+300
+   dense dims per memory is ~4.3x the current 1024.
 
 ### 3.2 The fallback, and probably the better system anyway
 
