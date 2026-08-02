@@ -64,3 +64,36 @@ def classification(predicted: list[bool], actual: list[bool]) -> ClassificationR
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     return ClassificationReport(precision, recall, f1, tp, fp, fn, tn)
+
+
+def mcnemar_exact(baseline: list[int], candidate: list[int]) -> dict:
+    """Exact paired McNemar test on per-question hit/miss indicators.
+
+    The right test for "did this change help", because the two systems answer
+    the *same* questions: only the discordant pairs carry information, and the
+    exact binomial avoids the chi-square approximation at small counts.
+
+    A review of this project found three published claims that did not survive
+    it -- a +0.012 hit@1 difference rested on 6 questions (p=0.36) and was
+    reported as a finding. As a house rule for LoCoMo's n=494, differences
+    below ~0.04 at hit@1 are not resolvable.
+    """
+    if len(baseline) != len(candidate):
+        raise ValueError("paired test needs equal-length indicator lists")
+    b01 = sum(1 for a, b in zip(baseline, candidate) if not a and b)  # candidate wins
+    b10 = sum(1 for a, b in zip(baseline, candidate) if a and not b)  # baseline wins
+    n = b01 + b10
+    if n == 0:
+        return {"delta": 0.0, "b01": 0, "b10": 0, "p": 1.0}
+
+    # Two-sided exact binomial: P(|X - n/2| >= |k - n/2|) under X ~ Bin(n, 0.5).
+    from math import comb
+
+    k = min(b01, b10)
+    tail = sum(comb(n, i) for i in range(0, k + 1)) / (2**n)
+    return {
+        "delta": (sum(candidate) - sum(baseline)) / len(baseline),
+        "b01": b01,
+        "b10": b10,
+        "p": min(1.0, 2 * tail),
+    }

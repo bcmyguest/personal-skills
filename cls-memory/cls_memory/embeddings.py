@@ -92,6 +92,13 @@ class LatentSemanticEmbedder:
     semantics, and 0.174 is not a good number in absolute terms. If you can
     reach a sentence encoder, use that instead; this is the floor, not the goal.
 
+    **`min_df=1` and a high `max_features` matter more than the dimension.**
+    The defaults were `min_df=2, max_features=20_000`, which discarded 46k of
+    66k terms on the LoCoMo corpus -- and rare terms are exactly what short-query
+    retrieval matches on. Removing the cap moved hit@1 from 0.251 to 0.306 at
+    unchanged dim, a larger gain than quadrupling the dimension buys. Raise
+    `min_df` only if the vocabulary genuinely will not fit; the fit is sparse.
+
     Fit before use:
 
         embedder = LatentSemanticEmbedder(dim=256)
@@ -102,8 +109,8 @@ class LatentSemanticEmbedder:
         self,
         dim: int = 256,
         *,
-        max_features: int = 20_000,
-        min_df: int = 2,
+        max_features: int = 100_000,
+        min_df: int = 1,
         char_ngrams: tuple[int, int] | None = (3, 5),
         seed: int = 0,
     ) -> None:

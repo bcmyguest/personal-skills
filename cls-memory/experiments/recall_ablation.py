@@ -57,6 +57,12 @@ KS = (1, 5, 10)
 
 
 def recall_at_k(ranked_ids: list[str], evidence: set[str], k: int) -> int:
+    """Hit@k, strictly: 1 if ANY evidence turn is in the top k.
+
+    Not recall@k -- 93 of 494 LoCoMo questions have 2-6 evidence turns, so this
+    sits systematically above true recall. Consistent across every row, so no
+    comparison here is affected, but read the published figures as hit@k.
+    """
     return int(any(r in evidence for r in ranked_ids[:k]))
 
 
@@ -88,16 +94,23 @@ def score_ranking(conversations, rank_fn, label: str) -> dict:
 class TfidfIndex:
     """Sparse TF-IDF cosine. No SVD, no learning -- the honest lexical baseline."""
 
-    def __init__(self, docs: list[str], *, char_ngrams=(3, 5)) -> None:
+    def __init__(
+        self, docs: list[str], *, char_ngrams=(3, 5), idf_corpus: list[str] | None = None
+    ) -> None:
+        # `idf_corpus` exists so this shares an IDF convention with
+        # HashedProjection, which fits on the whole corpus. Comparing a
+        # per-conversation-IDF exact ranker against a corpus-IDF hashed one
+        # confounded the projection with the fitting scope, and the confound
+        # was worth ~0.008 hit@1 -- about the size of the effect it was used
+        # to claim.
         self.char_ngrams = char_ngrams
         self.docs = docs
+        fit_docs = idf_corpus if idf_corpus is not None else docs
         df: Counter = Counter()
-        self.doc_terms = []
-        for doc in docs:
-            terms = Counter(self._terms(doc))
-            self.doc_terms.append(terms)
-            df.update(terms.keys())
-        n = len(docs)
+        for doc in fit_docs:
+            df.update(set(self._terms(doc)))
+        self.doc_terms = [Counter(self._terms(d)) for d in docs]
+        n = len(fit_docs)
         self.idf = {t: math.log((1 + n) / (1 + c)) + 1.0 for t, c in df.items()}
         self.doc_vecs = [self._weight(t) for t in self.doc_terms]
 
@@ -397,30 +410,55 @@ class SpacyVectorEmbedder:
 
 
 class HybridEmbedder:
-    """Concatenation of a lexical and a semantic embedder, each L2-normalised
-    and then weighted.
+    """Concatenation of a lexical and a semantic embedder, weighted by `w`.
 
-    Cosine over the concatenation is exactly the weighted sum of the two
-    cosines, so `alpha` interpolates between pure lexical (1.0) and pure
-    semantic (0.0) while staying a single dense vector the Hopfield layer can
-    store unchanged. This is the standard way to get both, and it is where the
-    two failure modes cancel: lexical is precise but brittle to paraphrase,
-    semantic is robust to paraphrase but blurs rare terms.
+    `w` is the **effective lexical share of the cosine**, which is what you
+    actually want to reason about. Scaling the two halves by alpha and
+    (1 - alpha) does *not* give that: with both halves unit-norm,
+
+        cos_hybrid = [a^2 cos_lex + (1-a)^2 cos_sem] / (a^2 + (1-a)^2)
+
+    -- quadratic, not linear. An earlier version swept `alpha` and labelled it
+    "lexical share", so alpha=0.4 was reported as 40% lexical when the true
+    share was 31%, and a grid of (0.5, 0.3, 0.2) probed w = (0.50, 0.155,
+    0.059), never testing the lexical-dominant half at all. Scaling by sqrt(w)
+    and sqrt(1-w) makes the label true.
     """
 
-    def __init__(self, lexical, semantic, *, alpha: float = 0.5) -> None:
+    def __init__(self, lexical, semantic, *, w: float = 0.5) -> None:
+        if not 0.0 <= w <= 1.0:
+            raise ValueError(f"w must be in [0, 1], got {w}")
         self.lexical = lexical
         self.semantic = semantic
-        self.alpha = alpha
+        self.w = w
         self.dim = lexical.dim + semantic.dim
+
+    def _combine(self, left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+        out = torch.cat(
+            [left * math.sqrt(self.w), right * math.sqrt(1.0 - self.w)], dim=-1
+        )
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
     def encode(self, texts) -> torch.Tensor:
         if isinstance(texts, str):
             texts = [texts]
-        left = self.lexical.encode(texts) * self.alpha
-        right = self.semantic.encode(texts) * (1.0 - self.alpha)
-        out = torch.cat([left, right], dim=-1)
-        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        return self._combine(
+            self.lexical.encode(texts), self.semantic.encode(texts)
+        )
+
+    def encode_query(self, texts) -> torch.Tensor:
+        """Forward to each half's query encoder where it has one.
+
+        Without this, `dense_knn_ranker`'s getattr fallback silently used the
+        *document* encoder for queries, so every hybrid row was measured with
+        BGE's query instruction prefix missing while the BGE-alone row above it
+        had it -- not an apples-to-apples comparison.
+        """
+        if isinstance(texts, str):
+            texts = [texts]
+        left = getattr(self.lexical, "encode_query", self.lexical.encode)(texts)
+        right = getattr(self.semantic, "encode_query", self.semantic.encode)(texts)
+        return self._combine(left, right)
 
 
 class BGEEmbedder:
@@ -462,7 +500,11 @@ class BGEEmbedder:
         path = pathlib.Path(
             model_dir or pathlib.Path(__file__).parent / "data" / "fast-bge-small-en-v1.5"
         )
-        if not path.exists():
+        # Check a required file, not just the directory: a partial extraction
+        # leaves the directory present and then raises a bare pyo3 Exception
+        # from Tokenizer.from_file, which the caller's narrow except did not
+        # catch, taking down the rest of the run.
+        if not (path / "tokenizer.json").exists():
             self._download(path)
 
         self._tok = Tokenizer.from_file(str(path / "tokenizer.json"))
@@ -666,13 +708,13 @@ def main() -> None:
         print(f"\n  best semantic pooling: {best_label} ({best_score:.3f}@1)")
         best_lexical = HashedProjection(corpus, dim=4096, weighting="bm25", seed=SEED)
         for alpha in (0.8, 0.7, 0.6, 0.5, 0.4):
-            hybrid = HybridEmbedder(best_lexical, best_semantic, alpha=alpha)
+            hybrid = HybridEmbedder(best_lexical, best_semantic, w=alpha)
             score_ranking(
                 conversations, lambda c, e=hybrid: dense_knn_ranker(c, e),
-                f"dense kNN, HYBRID RP-4096 + spaCy (alpha={alpha:g} lexical)",
+                f"dense kNN, HYBRID RP-4096 + spaCy (w={alpha:g} lexical)",
             )
-    except (ImportError, OSError) as exc:
-        print(f"  [skipped spaCy rows: {exc}]")
+    except Exception as exc:
+        print(f"  [skipped spaCy rows: {type(exc).__name__}: {exc}]")
 
     # A real contextual encoder -- the first row with word order.
     try:
@@ -683,14 +725,14 @@ def main() -> None:
         score_ranking(conversations, lambda c, e=bare: dense_knn_ranker(c, e),
                       "dense kNN, BGE-small-v1.5 (no query prefix)")
         lex = HashedProjection(corpus, dim=4096, weighting="bm25", seed=SEED)
-        for alpha in (0.5, 0.3, 0.2):
+        for alpha in (0.8, 0.7, 0.6, 0.5, 0.4):
             score_ranking(
                 conversations,
-                lambda c, e=HybridEmbedder(lex, bge, alpha=alpha): dense_knn_ranker(c, e),
-                f"dense kNN, HYBRID RP-4096 + BGE (alpha={alpha:g} lexical)",
+                lambda c, e=HybridEmbedder(lex, bge, w=alpha): dense_knn_ranker(c, e),
+                f"dense kNN, HYBRID RP-4096 + BGE (w={alpha:g} lexical)",
             )
-    except (ImportError, OSError) as exc:
-        print(f"  [skipped BGE rows: {exc}]")
+    except Exception as exc:  # pyo3 raises bare Exception on a bad model dir
+        print(f"  [skipped BGE rows: {type(exc).__name__}: {exc}]")
 
     print("\nFULL PIPELINE (VAE latent -> DG key -> Hopfield settling)")
     lsa256 = LatentSemanticEmbedder(dim=256, seed=SEED).fit(corpus)

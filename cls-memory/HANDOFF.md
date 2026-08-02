@@ -264,6 +264,82 @@ encoder on this task — it is entity-heavy exact-match retrieval where the
 lexical half carries rank-1, and a stronger semantic model does not change that.
 `experiments/bge_base_probe.py` reproduces this.
 
+### 3.1d Adversarial review — three conclusions retracted
+
+A review reproduced every published number exactly, then invalidated most of
+the conclusions drawn from them. What survives, what does not:
+
+**Retracted:**
+
+1. **"RP-4096 passes the sparse TF-IDF ceiling."** Seed 0 was the maximum of
+   five draws. Across seeds RP-4096 bm25 is **0.319 +- 0.010**, *below* the
+   0.320 exact-sparse figure it was said to pass — and it structurally cannot
+   beat it, being a JL approximation of exactly that cosine. Always report
+   mean +- sd for a randomised projection.
+2. **"Random projection beats truncated SVD at equal dimension."** False once
+   the feature sets are matched. LSA was capped at `max_features=20_000,
+   min_df=2` and saw 20k terms; `HashedProjection` saw 66k. **The cap was the
+   defect, not the SVD.** Removing it moves LSA-1024 from 0.251 to **0.306** at
+   unchanged dimension — a bigger gain than quadrupling the width buys. Now the
+   default in `cls_memory/embeddings.py`.
+3. **"The hybrid optimum is semantic-dominant."** Read off a mislabelled axis.
+   With both halves unit-norm the cosine is *quadratic* in the scaling factor:
+   `cos = [a^2 cos_lex + (1-a)^2 cos_sem] / (a^2 + (1-a)^2)`. The grid
+   `(0.5, 0.3, 0.2)` actually probed effective weights `(0.50, 0.155, 0.059)`
+   and never tested the lexical-dominant half. `HybridEmbedder` is now
+   parameterised by effective weight `w` directly.
+
+**Also fixed:** `HybridEmbedder` had no `encode_query`, so the getattr fallback
+used BGE's *document* encoder for queries — every hybrid row was measured
+without the query prefix while the BGE-alone row above it had it. Lexical
+baselines now share one IDF convention with the projection (the mismatch was
+worth ~0.008 hit@1, about the size of the effect it was used to claim). A
+partial weights directory no longer takes down the run.
+
+**Statistics.** `experiments/metrics.py` now has an exact paired McNemar test.
+At LoCoMo's n=494, **differences below ~0.04 hit@1 are not resolvable**. Under
+that rule the claims "query prefix is worth +0.012" (p=0.36), "BGE wins at
+hit@10, +0.036" (p=0.165) and "bge-base is worse than bge-small, -0.024" all
+fall below the resolution limit and should not have been stated as findings.
+The hybrid-beats-lexical result does survive: +0.063 hit@1, p=6.5e-5.
+
+**Metric naming.** What is reported is **hit@k** — 1 if any evidence item is in
+the top k — not recall@k. 93 of 494 questions have multiple evidence turns, so
+the figures sit above true recall. Consistent across rows, so no comparison is
+affected.
+
+### 3.1e Granularity, and why cross-paper comparison was meaningless
+
+`experiments/session_compare.py`. Published LoCoMo baselines retrieve
+**sessions** (BM25 top-3 of ~23); everything else here retrieves **turns**
+(top-1 of ~484). Same harness, both granularities:
+
+| | session (23 candidates) | | turn (484 candidates) | |
+|---|---|---|---|---|
+| | hit@1 | hit@3 | hit@1 | hit@5 |
+| BM25 | **0.690** | **0.828** | 0.298 | 0.526 |
+| BGE-small alone | 0.364 | 0.581 | 0.269 | 0.543 |
+| hybrid RP+BGE (w=0.5) | 0.605 | 0.808 | **0.397** | **0.660** |
+
+Two things follow, and both matter more than any tuning in this document:
+
+1. **The apparent gap to published memory systems is mostly task granularity.**
+   BM25 alone reaches 0.951 hit@10 at session granularity. Numbers like Zep's
+   94.7% or Mem0's 92.5% are end-to-end QA accuracy at session-level retrieval;
+   this project's 0.397 is turn-level top-1 on ~20x the candidates. **The two
+   were never comparable.** Do not quote them against each other.
+2. **The hybrid's advantage reverses with chunk size.** It beats BM25 at turn
+   granularity (+0.099 hit@1, p<0.0001) and **loses** at session granularity
+   (-0.085, p=0.0003). Long concatenated sessions exceed BGE's 512-token window
+   and dilute the CLS vector, while BM25 is indifferent to length. So the
+   "best" configuration is a function of chunk size, not a property of the
+   system — a second generalisation failure of the same kind as the QMSum one.
+
+**Consequence for task 1.1:** do not ship a single hybrid weight as a global
+default. Ship the lexical half (which is robust across both granularities and
+both corpora), make the semantic half opt-in, and set `w` per deployment from
+its own chunk size and corpus.
+
 **Revised task 1.1:** promote the lexical + BGE hybrid.
 1. Move `HashedProjection` into `cls_memory/embeddings.py` (BM25 weighting,
    dim 4096).

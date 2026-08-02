@@ -96,9 +96,9 @@ def main() -> None:
         score_ranking(
             conversations,
             lambda c, a=alpha: dense_knn_ranker(
-                c, HybridEmbedder(lexical, base, alpha=a)
+                c, HybridEmbedder(lexical, base, w=a)
             ),
-            f"HYBRID RP-4096 + BGE-base (alpha={alpha:g} lexical)",
+            f"HYBRID RP-4096 + BGE-base (w={alpha:g} lexical)",
         )
 
 
