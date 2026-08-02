@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from cls_memory import (
+    HashingEmbedder,
     ConsolidationConfig,
     CortexConfig,
     DecayConfig,
@@ -56,7 +57,12 @@ def make_system(**overrides) -> OrganizationalMemory:
     )
     for key, value in overrides.items():
         setattr(config, key, value)
-    return OrganizationalMemory(config)
+    # Pinned to HashingEmbedder: these tests exercise mechanisms, not
+    # embedding quality, and a fitted embedder would make every
+    # assertion depend on the 12-document fixture corpus.
+    return OrganizationalMemory(
+        config, embedder=HashingEmbedder(dim=config.cortex.input_dim, seed=0)
+    )
 
 
 @pytest.fixture(scope="module")

@@ -15,6 +15,7 @@ import pytest
 import torch
 
 from cls_memory import (
+    HashingEmbedder,
     CortexConfig,
     DecayConfig,
     HippocampalKey,
@@ -201,7 +202,7 @@ def test_consolidation_reindexes_latent_keys():
         key=KeyConfig(mode=HippocampalKey.LATENT),
         seed=0,
     )
-    system = OrganizationalMemory(config)
+    system = OrganizationalMemory(config, embedder=HashingEmbedder(dim=64, seed=0))
     system.bootstrap(CORPUS)
     text = "the shard rebalancer corrupted the orders index during failover"
     record = system.log_event(text).record

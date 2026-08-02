@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from cls_memory import (
+    HashingEmbedder,
     CortexConfig,
     DentateGyrus,
     HippocampalKey,
@@ -114,7 +115,8 @@ def _system(mode: HippocampalKey) -> OrganizationalMemory:
             novelty=NoveltyConfig(quantile=0.8, warmup=4, window=64),
             key=KeyConfig(mode=mode, expansion_dim=1024, sparsity_k=256),
             seed=0,
-        )
+        ),
+        embedder=HashingEmbedder(dim=64, seed=0),
     )
 
 

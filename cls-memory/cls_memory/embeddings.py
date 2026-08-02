@@ -8,6 +8,7 @@ embedding model, a fine-tuned encoder); nothing downstream changes.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from typing import Protocol, Sequence, runtime_checkable
 
@@ -71,6 +72,143 @@ class HashingEmbedder:
         feats = torch.stack([self._features(t) for t in texts])
         feats = torch.log1p(feats)  # damp repeated-token dominance
         out = feats @ self.projection
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+class LatentSemanticEmbedder:
+    """TF-IDF over character and word n-grams, reduced by truncated SVD (LSA).
+
+    The middle option between `HashingEmbedder` (lexical only, no fitting) and a
+    real sentence encoder (needs a model download). It is *fitted on your
+    corpus*, so it learns which terms actually discriminate in your domain, and
+    the SVD step means two documents sharing no exact token can still land close
+    if they co-occur with the same vocabulary.
+
+    Use this when a sentence encoder is unavailable. It is a large improvement
+    on hashing -- measured on LoCoMo against ground-truth evidence turns,
+    recall@5 goes 0.045 -> 0.174 and recall@1 goes 0.024 -> 0.121, roughly 4x --
+    but it is still a bag of n-grams with no word order and no compositional
+    semantics, and 0.174 is not a good number in absolute terms. If you can
+    reach a sentence encoder, use that instead; this is the floor, not the goal.
+
+    Fit before use:
+
+        embedder = LatentSemanticEmbedder(dim=256)
+        embedder.fit(corpus_texts)
+    """
+
+    def __init__(
+        self,
+        dim: int = 256,
+        *,
+        max_features: int = 20_000,
+        min_df: int = 2,
+        char_ngrams: tuple[int, int] | None = (3, 5),
+        seed: int = 0,
+    ) -> None:
+        self.dim = dim
+        self.max_features = max_features
+        self.min_df = min_df
+        self.char_ngrams = char_ngrams
+        self.seed = seed
+        self._vocab: dict[str, int] = {}
+        self._idf: Tensor | None = None
+        self._components: Tensor | None = None
+
+    # ---------------------------------------------------------------- features
+
+    def _terms(self, text: str) -> list[str]:
+        tokens = _tokenize(text)
+        terms = list(tokens)
+        terms += [" ".join(tokens[i : i + 2]) for i in range(len(tokens) - 1)]
+        if self.char_ngrams:
+            lo, hi = self.char_ngrams
+            padded = f" {text.lower().strip()} "
+            for n in range(lo, hi + 1):
+                terms += [padded[i : i + n] for i in range(len(padded) - n + 1)]
+        return terms
+
+    def _counts(self, text: str) -> dict[int, float]:
+        counts: dict[int, float] = {}
+        for term in self._terms(text):
+            idx = self._vocab.get(term)
+            if idx is not None:
+                counts[idx] = counts.get(idx, 0.0) + 1.0
+        return counts
+
+    def _tfidf(self, texts: Sequence[str]) -> Tensor:
+        if self._idf is None:
+            raise RuntimeError("call fit() before encoding")
+        out = torch.zeros(len(texts), len(self._vocab))
+        for row, text in enumerate(texts):
+            for idx, count in self._counts(text).items():
+                out[row, idx] = 1.0 + math.log(count)
+        out *= self._idf
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    # -------------------------------------------------------------------- fit
+
+    def fit(self, texts: Sequence[str]) -> "LatentSemanticEmbedder":
+        """Build the vocabulary and the SVD basis from a corpus."""
+        texts = list(texts)
+        if not texts:
+            raise ValueError("cannot fit on an empty corpus")
+
+        document_frequency: dict[str, int] = {}
+        for text in texts:
+            for term in set(self._terms(text)):
+                document_frequency[term] = document_frequency.get(term, 0) + 1
+
+        keep = [t for t, df in document_frequency.items() if df >= self.min_df]
+        keep.sort(key=lambda t: (-document_frequency[t], t))
+        keep = keep[: self.max_features]
+        self._vocab = {term: i for i, term in enumerate(keep)}
+        if not self._vocab:
+            raise ValueError("no terms survived min_df; lower it or add data")
+
+        n = len(texts)
+        self._idf = torch.tensor(
+            [math.log((1 + n) / (1 + document_frequency[t])) + 1.0 for t in keep]
+        )
+
+        matrix = self._tfidf(texts)
+        # Randomised range finder, then an exact SVD on the small projection.
+        # Cheaper than a full SVD on a 20k-column matrix and accurate enough at
+        # the ranks used here.
+        k = min(self.dim, matrix.shape[0], matrix.shape[1])
+        generator = torch.Generator().manual_seed(self.seed)
+        omega = torch.randn(matrix.shape[1], min(k + 16, matrix.shape[1]), generator=generator)
+        sample = matrix @ omega
+        for _ in range(2):  # power iterations sharpen the spectrum
+            sample = matrix @ (matrix.T @ sample)
+        q, _ = torch.linalg.qr(sample)
+        _, _, vh = torch.linalg.svd(q.T @ matrix, full_matrices=False)
+        components = vh[:k].T.contiguous()
+
+        # Honour the requested dim even when the corpus supports fewer
+        # components: pad with zero columns rather than silently returning
+        # narrower vectors. A corpus-dependent embedding width is a nasty
+        # footgun -- it would make the cortex's input_dim depend on how much
+        # text happened to be available at bootstrap.
+        if components.shape[1] < self.dim:
+            padding = torch.zeros(components.shape[0], self.dim - components.shape[1])
+            components = torch.cat([components, padding], dim=1)
+        self.rank = int(k)
+        """Components actually supported by the corpus; below `dim` means the
+        trailing coordinates are structurally zero."""
+        self._components = components
+        return self
+
+    @property
+    def is_fitted(self) -> bool:
+        return self._components is not None
+
+    def encode(self, texts: Sequence[str]) -> Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        if self._components is None:
+            raise RuntimeError("call fit() before encoding")
+        out = self._tfidf(list(texts)) @ self._components
         return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
 

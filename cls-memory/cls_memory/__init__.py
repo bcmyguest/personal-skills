@@ -21,7 +21,12 @@ from .config import (
     NoveltyConfig,
 )
 from .consolidation import ConsolidationEngine, ConsolidationReport
-from .embeddings import Embedder, HashingEmbedder, SentenceTransformerEmbedder
+from .embeddings import (
+    Embedder,
+    HashingEmbedder,
+    LatentSemanticEmbedder,
+    SentenceTransformerEmbedder,
+)
 from .energy import (
     BasinReport,
     basin_depth,
@@ -60,6 +65,7 @@ __all__ = [
     "IngestionResult",
     "KeyConfig",
     "KeyEncoder",
+    "LatentSemanticEmbedder",
     "MemoryRecord",
     "MemoryStore",
     "MemorySystemConfig",

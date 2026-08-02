@@ -24,9 +24,13 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-87 tests pass. `examples/demo.py` runs the full lifecycle end to end, and
-`experiments/benchmark.py` trains and evaluates the system on a labelled
-synthetic corpus — results in [RESULTS.md](RESULTS.md). Everything below
+95 tests pass. `examples/demo.py` runs the full lifecycle end to end.
+`experiments/benchmark.py` evaluates on a labelled synthetic corpus and
+`experiments/benchmark_locomo.py` on **real conversational data with
+ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
+
+> Read RESULTS.md Part II before quoting any number from Part I. On real data
+> retrieval recall@1 is 0.121, against 1.000 on the synthetic corpus. Everything below
 labelled "measured" was measured in this repo, not assumed.
 
 The package has been through an adversarial review; the defects it found and
@@ -34,7 +38,7 @@ the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 87 passed
+uv run pytest                       # 95 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -44,7 +48,7 @@ PYTHONPATH=. uv run python examples/demo.py
 
 | Module | Role | Key type |
 |---|---|---|
-| `embeddings.py` | text → vector (pluggable; offline hashing default) | — |
+| `embeddings.py` | text → vector (pluggable; fitted LSA default) | — |
 | `neocortex.py` | β-VAE schema + novelty gate | slow, gradient |
 | `pattern_separation.py` | dentate-gyrus key encoder | fixed, random |
 | `hippocampus.py` | Modern Hopfield Network | fast, one-shot |
@@ -304,10 +308,16 @@ and blows the samples up by ~1300× (asserted in
 
 ## 9. Known limitations
 
-- **The `HashingEmbedder` is lexical, not semantic.** It exists so the demo runs
-  offline. Retrieval quality is bounded by embedding geometry far more than by
-  anything in the Hopfield layer — swap in `SentenceTransformerEmbedder` or an
-  API encoder for real use.
+- **Retrieval is bounded by the embedder, and the gap is large.** Measured on
+  real dialogue (LoCoMo), recall@1 is 0.121 against 1.000 on the synthetic
+  corpus. `LatentSemanticEmbedder` is the default and roughly 4x the old
+  hashing one, but it is still a bag of n-grams. Swap in a sentence encoder for
+  real use — see RESULTS.md Part II.
+- **The novelty gate is partly a length filter on real text**: correlation
+  between surprise and turn length is −0.48 on LoCoMo, where the synthetic
+  corpus (uniform-length documents) hid the effect entirely.
+- **The 30-day half-life is domain-specific.** On LoCoMo's 231-day spans it
+  discards 13.8% of the corpus and costs 1.6 points of recall.
 - **Deletion is O(N·d).** `remove()` compacts the pattern tensor. Fine at PoC
   scale; batch deletions or use a tombstone + periodic compaction beyond ~10⁵
   memories.

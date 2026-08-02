@@ -10,6 +10,7 @@ want the whole loop with one object.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Sequence
@@ -19,7 +20,7 @@ from torch import Tensor
 
 from .config import MemorySystemConfig
 from .consolidation import ConsolidationEngine, ConsolidationReport
-from .embeddings import Embedder, HashingEmbedder
+from .embeddings import Embedder, LatentSemanticEmbedder
 from .ingestion import IngestionResult, SynapticIngestionPipeline
 from .neocortex import NoveltyGate, SlowLearningNeocortex
 from .pattern_separation import KeyEncoder
@@ -47,7 +48,11 @@ class OrganizationalMemory:
         self.config = config or MemorySystemConfig()
         torch.manual_seed(self.config.seed)
 
-        self.embedder = embedder or HashingEmbedder(
+        # LatentSemanticEmbedder by default, not HashingEmbedder: measured on
+        # LoCoMo, hashing gets recall@5 0.045 against ground-truth evidence
+        # turns where LSA gets 0.174. Hashing needs no fitting, which made it
+        # the convenient default; convenience is not worth 4x retrieval.
+        self.embedder = embedder or LatentSemanticEmbedder(
             dim=self.config.cortex.input_dim, seed=self.config.seed
         )
         if self.embedder.dim != self.config.cortex.input_dim:
@@ -110,7 +115,29 @@ class OrganizationalMemory:
         Order matters: calibrating before training would measure surprise
         against an untrained cortex, where everything looks equally novel.
         """
-        x = self.embedder.encode(list(corpus))
+        corpus = list(corpus)
+        # A fittable embedder (LSA and friends) is fitted here, on the same
+        # corpus the schema learns from. Doing it lazily at first encode would
+        # silently fit on whatever single document arrived first.
+        fit = getattr(self.embedder, "fit", None)
+        if callable(fit) and not getattr(self.embedder, "is_fitted", True):
+            fit(corpus)
+            if self.embedder.dim != self.config.cortex.input_dim:
+                raise ValueError(
+                    f"embedder fitted to dim {self.embedder.dim} but the cortex "
+                    f"expects {self.config.cortex.input_dim}"
+                )
+            rank = getattr(self.embedder, "rank", None)
+            if rank is not None and rank < self.embedder.dim:
+                warnings.warn(
+                    f"embedder fitted on {len(corpus)} documents supports only "
+                    f"{rank} of {self.embedder.dim} components; the rest are "
+                    "structurally zero. Use a larger corpus or a smaller "
+                    "input_dim.",
+                    stacklevel=2,
+                )
+
+        x = self.embedder.encode(corpus)
         history = self.cortex.fit(x, epochs=epochs, verbose=verbose)
         self.ingestion.calibrate(corpus)
         return BootstrapReport(
