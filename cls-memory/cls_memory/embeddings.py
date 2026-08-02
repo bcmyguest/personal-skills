@@ -210,12 +210,20 @@ class LatentSemanticEmbedder:
         # the ranks used here.
         k = min(self.dim, matrix.shape[0], matrix.shape[1])
         generator = torch.Generator().manual_seed(self.seed)
-        omega = torch.randn(matrix.shape[1], min(k + 16, matrix.shape[1]), generator=generator)
-        sample = torch.sparse.mm(matrix, omega)
+        # Oversample by 32 (was 16) and re-orthonormalise after every half
+        # step. Without the intermediate QR, two power iterations in float32
+        # collapse the trailing directions toward the dominant singular vector:
+        # measured against an exact dense SVD, per-component |cos| ran 1.00 for
+        # the leading eight but as low as 0.07 in the tail, and at the default
+        # input_dim=1024 that tail is most of the embedding.
+        width = min(k + 32, matrix.shape[1])
+        omega = torch.randn(matrix.shape[1], width, generator=generator)
+        sample, _ = torch.linalg.qr(torch.sparse.mm(matrix, omega))
         transposed = matrix.t().coalesce()
-        for _ in range(2):  # power iterations sharpen the spectrum
-            sample = torch.sparse.mm(matrix, torch.sparse.mm(transposed, sample))
-        q, _ = torch.linalg.qr(sample)
+        for _ in range(2):
+            projected, _ = torch.linalg.qr(torch.sparse.mm(transposed, sample))
+            sample, _ = torch.linalg.qr(torch.sparse.mm(matrix, projected))
+        q = sample
         # (q^T M) = (M^T q)^T, and only the sparse-dense product is supported.
         _, _, vh = torch.linalg.svd(
             torch.sparse.mm(transposed, q).T, full_matrices=False

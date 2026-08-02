@@ -145,6 +145,15 @@ class MemoryStore:
             )
         if len(self._index) != len(self._records):
             raise RuntimeError("store index desynchronised from records")
+        # Cardinality alone missed the worst case: an index with the right
+        # number of entries but wrong values makes record_at(row) return the
+        # wrong record, which is exactly what this is meant to prevent.
+        for row, record in enumerate(self._records):
+            if self._index.get(record.id) != row:
+                raise RuntimeError(
+                    f"store index points {record.id} at row "
+                    f"{self._index.get(record.id)}, expected {row}"
+                )
 
     def remove(self, record_ids: Iterable[str]) -> list[str]:
         """Forget records by id. Returns the ids actually removed."""

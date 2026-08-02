@@ -119,7 +119,18 @@ class SynapticIngestionPipeline:
         # Reject before anything else: a degenerate key poisons dedup and
         # retrieval, and the evergreen bypass would otherwise walk it straight
         # past the gate.
-        if not torch.isfinite(key).all() or float(key.norm()) < 1e-8:
+        # The EMBEDDING must be checked too, not only the key. Under
+        # HippocampalKey.LATENT a zero embedding still yields a unit-norm key,
+        # so the record stored -- and then consolidation's
+        # _embedding_landscape rejected the zero embedding, bricking sleep()
+        # permanently. The evergreen bypass walked it straight past the gate.
+        degenerate = (
+            not torch.isfinite(key).all()
+            or float(key.norm()) < 1e-8
+            or not torch.isfinite(embedding).all()
+            or float(embedding.norm()) < 1e-8
+        )
+        if degenerate:
             return IngestionResult(
                 action=IngestionAction.REJECTED,
                 text=text,

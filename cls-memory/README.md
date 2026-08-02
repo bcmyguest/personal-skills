@@ -24,7 +24,7 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-123 tests pass. `examples/demo.py` runs the full lifecycle end to end.
+131 tests pass. `examples/demo.py` runs the full lifecycle end to end.
 `experiments/benchmark.py` evaluates on a labelled synthetic corpus and
 `experiments/benchmark_locomo.py` on **real conversational data with
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
@@ -40,7 +40,7 @@ the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 123 passed
+uv run pytest                       # 131 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -456,7 +456,37 @@ config is deep-copied rather than mutated in place; `sweep` and `stats` agree on
 the empty-store sentinel; and several loader bugs (a date fallback that raised,
 `span_days` on empty input, an O(Q·E·T) rebuild, blank-`dia_id` collisions).
 
+## 13. Third review — capacity buffer, consolidation, hardening
+
+A third pass reviewed the newest code. It **verified** the consolidation fix by
+a route its authors had not used (a held-out control: surprise falls on stored
+episodes while held-out routine surprise rises in both arms, so the pruning
+criterion is not simply getting easier), confirmed the ULA divergence bound and
+the step caps analytically and empirically, confirmed `replay_sigma` does *not*
+break the σ²=1/β correspondence, and confirmed the capacity buffer's scaling and
+view correctness. Defects found and fixed:
+
+| Defect | Why it mattered |
+|---|---|
+| `state_dict()` saved capacity **padding** and dropped `_n_used`; loading into a matching-capacity network restored zero rows as live memories taking **100% of attention mass**, and loading into a fresh network failed outright | the module was un-checkpointable, and the one case that "worked" was the corrupting one |
+| Under `HippocampalKey.LATENT`, degenerate text produced a zero *embedding* but a unit-norm *key*, so it stored — then consolidation's embedding landscape rejected it, **bricking `sleep()` permanently** | ingestion validated the key; replay validated the embedding |
+| `write()` accepted non-finite `log_prior` | the same store-poisoning defect, left open one argument over from the pattern fix |
+| `loss_before`/`loss_after` drew from the **global** RNG | identically-seeded systems reported different losses, and `improved` with them |
+| `patterns`/`log_prior` setters were asymmetric | `net.log_prior = X` desynced silently one way, crashed the other |
+| Sparse LSA fit did not reproduce the dense components in the tail (per-component \|cos\| as low as 0.07) | no re-orthonormalisation between power iterations; at `input_dim=1024` the affected tail is most of the embedding |
+| `assert_consistent` checked cardinality only | a scrambled index — the exact "wrong record" case it exists to prevent — passed |
+
+It also found **two of my own tests were worthless**: `test_reindex_is_atomic`
+passed a wrong-*width* key, caught by a dim check *before* the removal, so the
+rollback it claimed to test never executed; and `test_lsa_fit_uses_a_sparse_matrix`
+asserted nothing about sparsity and would have passed against the dense
+implementation. Both are fixed, and the scaling test now fits an exponent rather
+than thresholding a ratio.
+
 Known and accepted, not fixed: `MemorySystemConfig.device` is ignored (CPU
 only), `basin_depth` is single-query, `PatternCompleter.occlude` is evaluation
-tooling on the read path, and `record.key` duplicates its pattern row (dropping
-it in favour of a view would halve key memory).
+tooling on the read path, `record.key` duplicates its pattern row, `remove()`
+releases capacity so the next write reallocates, and a `patterns` view held
+across a growing `write` silently detaches (documented on the property).
+`experiments/significance.py` remains confounded — its arms share a store that
+`consolidate` mutates via `reindex` — so its numbers are not quoted anywhere.

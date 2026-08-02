@@ -265,10 +265,14 @@ class ConsolidationEngine:
         batch = torch.cat(parts, dim=0)
 
         with torch.no_grad():
-            loss_before = float(self.cortex.elbo_loss(batch)[0])
+            # sample=False: the reported loss must be reproducible. elbo_loss
+            # defaults to sampling, which drew from the *global* RNG, so two
+            # identically-seeded systems reported different losses (0.72 vs
+            # 0.81) despite bit-identical weights -- and `improved` with them.
+            loss_before = float(self.cortex.reported_loss(batch))
         self.cortex.fit(batch, epochs=epochs, lr=lr, generator=generator)
         with torch.no_grad():
-            loss_after = float(self.cortex.elbo_loss(batch)[0])
+            loss_after = float(self.cortex.reported_loss(batch))
 
         # Training moved the encoder, so every latent-derived key is now stale.
         # Without this the read path would encode queries with the new cortex

@@ -167,13 +167,15 @@ class ConsolidationConfig:
     """Fraction of the replay batch drawn from the *stored embeddings* rather
     than from the cortex's own decoder.
 
-    This exists because decoder-only replay is a no-op for learning. Measured:
-    `decode(latent)` of a stored anomaly had cosine 0.047 with the embedding it
-    was supposed to be reinstating, and the cortex's surprise on its own decoder
-    output was 0.0001 against 1.15 on the real memories -- so training on it is
-    self-distillation with essentially zero gradient signal about the episodes,
-    and pruning could never fire (0 of 36 released at any budget up to 150
-    epochs).
+    This exists because decoder-only replay is a no-op for learning. The cortex's
+    surprise on its own decoder output is ~100x lower than on the real memories
+    (0.0086 vs 0.902 in one measurement, 0.0001 vs 1.15 in another) -- training
+    on it is self-distillation with essentially zero gradient signal about the
+    episodes, and pruning could never fire (0 of 36 released at any budget up to
+    150 epochs). The cosine between `decode(latent)` and the embedding it should
+    reinstate is likewise poor, but its exact value is configuration-specific
+    (0.047 and 0.358 measured under different settings) and should not be quoted
+    as a general figure.
 
     The value is a measured operating point on a real trade-off, not a guess.
     Episodic replay teaches the episodes and, unchecked, overwrites the schema

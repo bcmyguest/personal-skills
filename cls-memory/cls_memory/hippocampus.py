@@ -108,14 +108,27 @@ class ModernHopfieldNetwork(torch.nn.Module):
 
     @property
     def patterns(self) -> Tensor:
-        """The live pattern rows. A view into the capacity buffer, so it is
-        exactly `len(self)` rows regardless of allocated capacity."""
+        """The live pattern rows.
+
+        A view into the capacity buffer, so it is exactly `len(self)` rows
+        regardless of allocated capacity. **Any `write` or `remove` may
+        invalidate it**: a write that triggers growth reallocates, and a view
+        held across that silently stops aliasing the buffer. Clone if you need
+        to keep it."""
         return self._patterns[: self._n_used]
 
     @patterns.setter
     def patterns(self, value: Tensor) -> None:
+        # Sets all three fields together. The old setter bumped _n_used without
+        # touching _log_prior, so `net.patterns = X` with a different row count
+        # left the two views disagreeing -- silently in one direction, as an
+        # opaque broadcast error in the other.
         self._patterns = value
         self._n_used = int(value.shape[0])
+        if self._log_prior.shape[0] < self._n_used:
+            grown = torch.zeros(self._n_used, dtype=self._log_prior.dtype)
+            grown[: self._log_prior.shape[0]] = self._log_prior
+            self._log_prior = grown
 
     @property
     def log_prior(self) -> Tensor:
@@ -123,6 +136,11 @@ class ModernHopfieldNetwork(torch.nn.Module):
 
     @log_prior.setter
     def log_prior(self, value: Tensor) -> None:
+        if value.shape[0] < self._n_used:
+            raise ValueError(
+                f"log_prior has {value.shape[0]} rows but {self._n_used} "
+                "patterns are live"
+            )
         self._log_prior = value
 
     def __len__(self) -> int:
@@ -164,6 +182,10 @@ class ModernHopfieldNetwork(torch.nn.Module):
             lp = log_prior.detach().reshape(-1).to(self.log_prior.dtype)
             if lp.shape[0] != x.shape[0]:
                 raise ValueError("log_prior must have one entry per pattern")
+        # set_log_prior checked this; write did not, leaving the same
+        # store-poisoning defect open one argument over.
+        if not torch.isfinite(lp).all():
+            raise ValueError("log_prior must be finite; got NaN or Inf")
 
         # Geometric growth, not a fresh torch.cat per write. Reallocating the
         # whole buffer on every single-pattern write made ingestion O(N^2):
@@ -193,6 +215,61 @@ class ModernHopfieldNetwork(torch.nn.Module):
         self._n_used = needed
         return torch.arange(start, needed)
 
+    def _save_to_state_dict(self, destination, prefix, keep_vars) -> None:
+        """Persist the live rows only.
+
+        `_patterns`/`_log_prior` hold *capacity*, and `_n_used` is a plain int
+        that state_dict cannot carry. Saving the raw buffers stored the zero
+        padding and dropped the only thing recording how much of it was real:
+        loading into a network whose capacity happened to match restored the
+        padding as live memories, and those zero rows took **100% of the
+        attention mass** (a zero row scores log(w) for any query, while a real
+        unit-norm row scores beta*(cos - 0.5)). Loading into a fresh network
+        failed outright on a shape mismatch, strict=False included.
+        """
+        destination[prefix + "_patterns"] = (
+            self.patterns if keep_vars else self.patterns.detach().clone()
+        )
+        destination[prefix + "_log_prior"] = (
+            self.log_prior if keep_vars else self.log_prior.detach().clone()
+        )
+
+    def _load_from_state_dict(
+        self, state_dict, prefix, local_metadata, strict,
+        missing_keys, unexpected_keys, error_msgs,
+    ) -> None:
+        """Resize to the incoming rows and restore the live-row counter."""
+        pattern_key = prefix + "_patterns"
+        prior_key = prefix + "_log_prior"
+        remaining = {
+            k: v for k, v in state_dict.items() if k not in (pattern_key, prior_key)
+        }
+        patterns = state_dict.get(pattern_key)
+        log_prior = state_dict.get(prior_key)
+        if patterns is not None:
+            if patterns.shape[-1] != self.dim:
+                error_msgs.append(
+                    f"_patterns has dim {patterns.shape[-1]}, expected {self.dim}"
+                )
+                return
+            self._patterns = patterns.detach().clone()
+            self._n_used = int(patterns.shape[0])
+            self._log_prior = (
+                log_prior.detach().clone()
+                if log_prior is not None
+                else torch.zeros(self._n_used, dtype=self._patterns.dtype)
+            )
+        super()._load_from_state_dict(
+            remaining, prefix, local_metadata, strict,
+            missing_keys, unexpected_keys, error_msgs,
+        )
+        # We consumed these above, so the base implementation -- which never saw
+        # them -- would otherwise report them missing under strict loading.
+        if patterns is not None:
+            for key in (pattern_key, prior_key):
+                if key in missing_keys:
+                    missing_keys.remove(key)
+
     def remove(self, indices: Tensor | list[int]) -> None:
         """Forget patterns by row index (compacts the buffers)."""
         if isinstance(indices, list):
@@ -201,6 +278,9 @@ class ModernHopfieldNetwork(torch.nn.Module):
             return
         keep = torch.ones(len(self), dtype=torch.bool)
         keep[indices.to(torch.long)] = False
+        # Compacts to exactly n_used, so the next write reallocates. remove is
+        # already O(N*d), so this is a ~2-3x constant on prune-then-ingest
+        # cycles, not an asymptotic change.
         kept_patterns = self.patterns[keep].contiguous()
         kept_prior = self.log_prior[keep].contiguous()
         self._patterns = kept_patterns

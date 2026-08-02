@@ -108,6 +108,17 @@ class SlowLearningNeocortex(nn.Module):
         loss = (recon + self.config.kl_weight * kl).mean()
         return loss, recon.mean().detach(), kl.mean().detach()
 
+    @torch.no_grad()
+    def reported_loss(self, x: Tensor) -> Tensor:
+        """Deterministic objective for reporting, using mu rather than a sample.
+
+        `elbo_loss` samples, so its value depends on RNG state and is not
+        reproducible across runs -- fine as a training signal, wrong as a
+        number in a report someone compares across configurations.
+        """
+        recon, kl = self.losses(x, sample=False)
+        return (recon + self.config.kl_weight * kl).mean()
+
     # ------------------------------------------------------------- inference
 
     @torch.no_grad()

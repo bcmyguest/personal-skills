@@ -109,8 +109,11 @@ def test_reindex_is_atomic():
         )
     before = store.mhn.patterns.clone()
 
+    # A correct-width but zero-norm key: rejected by mhn.write, i.e. *after*
+    # the removal, which is the path the rollback exists for. Passing a wrong
+    # *width* would be caught by the dim check first and never exercise it.
     with pytest.raises(ValueError):
-        store.reindex(lambda r: torch.ones(8))  # wrong width
+        store.reindex(lambda r: torch.zeros(4))
 
     assert len(store) == 3
     assert len(store.mhn) == 3
@@ -282,10 +285,18 @@ def test_write_is_amortised_linear():
         return time.perf_counter() - start
 
     elapsed(500)  # warm up
-    small, large = elapsed(1000), elapsed(4000)
-    # 4x the writes should cost well under quadratic (16x); allow generous slack
-    # for a noisy shared machine while still failing on true O(N^2).
-    assert large < small * 10, f"write scaling looks quadratic: {small=} {large=}"
+    sizes = (1000, 2000, 4000)
+    times = [elapsed(n) for n in sizes]
+
+    # Fit the exponent rather than thresholding a ratio: linear is slope 1,
+    # quadratic is slope 2, and the pre-fix code measured ~1.85. A bare ratio
+    # test needed a 10x cutoff sitting only 1.3x below the broken value, which
+    # a loaded machine could cross in either direction.
+    import math
+    slope = (math.log(times[-1]) - math.log(times[0])) / (
+        math.log(sizes[-1]) - math.log(sizes[0])
+    )
+    assert slope < 1.4, f"write scaling exponent {slope:.2f} (linear=1, quadratic=2)"
 
 
 def test_capacity_growth_keeps_patterns_exact():
@@ -309,10 +320,139 @@ def test_lsa_fit_uses_a_sparse_matrix():
     """The dense fit allocated len(texts) x len(vocab) floats — 2.1 GB peak at
     10k documents, ~8 GB extrapolated at 100k."""
     corpus = [f"document number {i} about topic {i % 7} and other words" for i in range(400)]
-    embedder = LatentSemanticEmbedder(dim=32, min_df=1, seed=0)
-    sparse = embedder  # fit() must not raise or blow up
-    sparse.fit(corpus)
-    assert sparse.is_fitted
-    vectors = sparse.encode(corpus[:5])
+    embedder = LatentSemanticEmbedder(dim=32, min_df=1, seed=0).fit(corpus)
+
+    matrix = embedder._tfidf(corpus, sparse=True)
+    assert matrix.is_sparse
+    density = matrix._nnz() / (matrix.shape[0] * matrix.shape[1])
+    assert density < 0.25, f"not actually sparse (density {density:.3f})"
+
+    vectors = embedder.encode(corpus[:5])
     assert vectors.shape == (5, 32)
     assert torch.isfinite(vectors).all()
+
+
+def test_lsa_components_match_an_exact_svd():
+    """Guards the randomised range finder. Without re-orthonormalising between
+    power iterations, float32 collapses the trailing directions toward the
+    dominant singular vector — measured per-component |cos| as low as 0.07."""
+    corpus = [
+        f"topic {i % 9} document {i} discussing {'alpha beta' if i % 2 else 'gamma delta'} "
+        f"and specifics {i * 7 % 23}"
+        for i in range(120)
+    ]
+    embedder = LatentSemanticEmbedder(dim=24, min_df=1, seed=0).fit(corpus)
+    dense = embedder._tfidf(corpus, sparse=False)
+    _, _, vh = torch.linalg.svd(dense, full_matrices=False)
+
+    cosines = (vh[: embedder.rank] @ embedder._components).abs().diagonal()
+    assert float(cosines.min()) > 0.9, (
+        f"randomised SVD diverges from exact in the tail: min |cos| "
+        f"{float(cosines.min()):.3f}, all {cosines.tolist()}"
+    )
+
+
+# ------------------------------------------------------------------ persistence
+
+
+def test_state_dict_round_trips_live_rows_only():
+    """The capacity buffer must not be saved as if it were memories.
+
+    `_n_used` is a plain int and cannot ride in a state_dict, so saving the raw
+    buffers stored the zero padding and lost the count. Loading into a network
+    whose capacity happened to match restored the padding as live memories, and
+    those zero rows took 100% of the attention mass; loading into a fresh
+    network failed outright on a shape mismatch.
+    """
+    saved = ModernHopfieldNetwork(32, HopfieldConfig())
+    rows = torch.nn.functional.normalize(torch.randn(5, 32), dim=-1)
+    for row in rows:
+        saved.write(row)
+    saved.set_log_prior(torch.linspace(-1.0, 1.0, 5))
+
+    # into a fresh network: must not raise
+    fresh = ModernHopfieldNetwork(32, HopfieldConfig())
+    fresh.load_state_dict(saved.state_dict())
+    assert len(fresh) == 5
+    assert torch.allclose(fresh.patterns, saved.patterns, atol=1e-6)
+    assert torch.allclose(fresh.log_prior, saved.log_prior, atol=1e-6)
+
+    # into a network with more rows: must shrink, not resurrect padding
+    bigger = ModernHopfieldNetwork(32, HopfieldConfig())
+    for row in torch.nn.functional.normalize(torch.randn(8, 32), dim=-1):
+        bigger.write(row)
+    bigger.load_state_dict(saved.state_dict())
+    assert len(bigger) == 5
+    query = torch.nn.functional.normalize(torch.randn(32), dim=0)
+    assert torch.isfinite(bigger.attention(query)).all()
+    assert float(bigger.retrieve(query).state.norm()) > 0.1
+
+
+def test_write_rejects_non_finite_log_prior():
+    net = ModernHopfieldNetwork(4, HopfieldConfig())
+    with pytest.raises(ValueError, match="finite"):
+        net.write(torch.eye(4)[0], log_prior=torch.tensor([float("nan")]))
+    with pytest.raises(ValueError, match="finite"):
+        net.write(torch.eye(4)[1], log_prior=float("inf"))
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [HippocampalKey.EMBEDDING, HippocampalKey.SEPARATED, HippocampalKey.LATENT],
+)
+def test_degenerate_text_rejected_in_every_key_mode(mode):
+    """Under LATENT a zero embedding still yields a unit-norm key, so the record
+    stored and consolidation's embedding landscape then rejected it — bricking
+    sleep() permanently. The evergreen bypass walked it past the gate."""
+    system = OrganizationalMemory(
+        MemorySystemConfig(
+            cortex=CortexConfig(
+                input_dim=64, hidden_dims=(32,), latent_dim=8, epochs=3, batch_size=4
+            ),
+            novelty=NoveltyConfig(warmup=2, window=32),
+            key=KeyConfig(mode=mode),
+            seed=0,
+        ),
+        embedder=HashingEmbedder(dim=64, seed=0),
+    )
+    system.bootstrap(CORPUS)
+    before = len(system)
+
+    result = system.ingest("中文测试 😀", persistence=Persistence.EVERGREEN)
+    assert result.action is IngestionAction.REJECTED
+    assert len(system) == before
+    system.sleep(epochs=1)  # must not raise
+
+
+def test_consolidation_loss_is_reproducible():
+    """loss_before/after were drawn from the global RNG, so identically-seeded
+    systems reported different numbers — and `improved` with them."""
+
+    def run() -> tuple[float, float]:
+        system = make_system()
+        system.bootstrap(CORPUS)
+        system.log_event("the shard rebalancer corrupted the orders index")
+        report = system.sleep(epochs=3)
+        return report.loss_before, report.loss_after
+
+    torch.manual_seed(11)
+    first = run()
+    torch.manual_seed(29)  # deliberately different global state
+    second = run()
+    assert first == pytest.approx(second, abs=1e-6)
+
+
+def test_assert_consistent_catches_a_scrambled_index():
+    store = MemoryStore(4)
+    records = []
+    for i in range(3):
+        r = MemoryRecord(
+            text=f"r{i}", embedding=torch.zeros(4), latent=torch.eye(4)[i].clone()
+        )
+        store.add(r)
+        records.append(r)
+    store.assert_consistent()
+
+    store._index[records[0].id] = 2  # right cardinality, wrong values
+    with pytest.raises(RuntimeError, match="index points"):
+        store.assert_consistent()
