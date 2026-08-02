@@ -648,3 +648,134 @@ to verify a mechanism being wrong in the mechanism's favour (see HANDOFF §5).
   of once per query.
 - The remaining error is **scope**, not similarity, and wants structured
   metadata rather than more memory physics.
+
+---
+
+# Part V — The MHN as a substrate, not a ranker
+
+Parts I–IV all scored the Hopfield network as a **ranker of text chunks**. That
+was the wrong axis, and the answer was fixed before any of it ran:
+`softmax(beta X xi) X` over stored rows *is* an attention head, which is a soft
+kNN. "Ties cosine kNN" was a tautology reported as a finding.
+
+The claims that actually separate an associative memory from a vector database
+are about representation. `experiments/superposition.py` tests them.
+
+## V.1 One MHN update is exactly one attention head
+
+| beta | float32 | float64 |
+|---|---|---|
+| 1 → 512 (5 values) | ≤ 8.94e-08 | **0.00e+00** |
+
+Not "analogous to" — bit-identical in double precision. The stored energy folds
+a `-beta*||x||^2/2` term into the logits; patterns are unit-norm by config, so
+that term is the same constant for every memory and cancels inside the softmax.
+
+**Consequence:** memories do not have to be retrieved *before* the model and
+pasted into the prompt. They are a K/V pair the model can attend to directly,
+at a cost of **zero context tokens**.
+
+One number that matters for how that behaves: a real transformer head uses
+scale `1/sqrt(d)`, which for d=384 is **beta = 0.051** — four orders of
+magnitude below the beta=128 this store needs for episodic recall. Memories
+injected into a real head therefore land deep in the metastable regime, not the
+single-attractor regime.
+
+## V.2 Superposition capacity — and the anisotropy that was destroying it
+
+A sum of k near-orthogonal unit vectors retains each component at cosine
+~1/sqrt(k). Sentence embeddings are not near-orthogonal:
+
+| code | mean cosine between *unrelated* memories |
+|---|---|
+| BGE as shipped | **+0.649** |
+| BGE whitened (centre + ZCA) | −0.001 |
+| random unit vectors | +0.000 |
+
+BGE vectors sit in a narrow cone. There is barely any component structure to
+decode, so a mixture of 4 is indistinguishable from any other mixture of 4.
+This is the same defect the `HopfieldConfig.beta` docstring already recorded
+from a different angle — "DG keys for unrelated text sit at cosine ~0.71,
+giving Delta=0.29" — and Delta is precisely the separation term Ramsauer's
+capacity results multiply by beta.
+
+Per-item recall of k memories superposed into **one 384-d vector**, then
+decoded against 788 stored memories:
+
+| k | BGE as shipped | BGE whitened | random unit (ceiling) |
+|---|---|---|---|
+| 2 | 0.915 | **1.000** | 1.000 |
+| 4 | 0.185 | **1.000** | 1.000 |
+| 8 | 0.062 | **0.999** | 1.000 |
+| 16 | 0.049 | **0.974** | 0.966 |
+| 32 | 0.070 | **0.892** | 0.850 |
+| 64 | 0.102 | **0.774** | 0.709 |
+
+**Whitening recovers the full theoretical capacity** — it matches, and above
+k=16 slightly exceeds, the random-vector ceiling. One vector holds 8 memories
+losslessly, 16 at 97%, 32 at 89%.
+
+## V.3 Settling destroys superposition — at every beta
+
+Per-item recall on whitened vectors, `none` = the raw normalised sum with no
+Hopfield update applied:
+
+| k | none | b=0.051 | b=0.5 | b=2 | b=8 | b=32 | b=128 |
+|---|---|---|---|---|---|---|---|
+| 2 | **1.000** | 0.005 | 0.005 | 0.005 | 0.510 | 0.730 | 0.620 |
+| 4 | **1.000** | 0.005 | 0.005 | 0.005 | 0.253 | 0.253 | 0.253 |
+| 8 | **1.000** | 0.011 | 0.011 | 0.013 | 0.149 | 0.149 | 0.149 |
+| 16 | **0.974** | 0.016 | 0.016 | 0.020 | 0.109 | 0.110 | 0.109 |
+| 32 | **0.892** | 0.040 | 0.039 | 0.042 | 0.107 | 0.116 | 0.114 |
+
+No beta preserves a mixture. Low beta pulls the state to the global centroid
+(0.005); high beta snaps it to one attractor (0.15–0.25). **The update is a
+cleanup operator and is antithetical to holding a superposition.**
+
+The architectural correction that follows:
+
+    hold      superposed sum of whitened memory vectors     (one K/V slot)
+    decode    attention LOGITS against the store            (X @ state)
+    complete  ITERATE the update, high beta                 (one episode out)
+
+`X @ state` is the MHN's own logit computation. So the Hopfield machinery *is*
+the decoder — you use its **logits**, never its settled output, unless you
+specifically want to collapse to a single episode. Every experiment before this
+one used the settled output.
+
+## V.4 What it costs
+
+Mean rule = 36 real tokens.
+
+| rules applied | as text | as K/V | ratio |
+|---|---|---|---|
+| 3 | 108 tokens | 1 slot | 108x |
+| 10 | 360 tokens | 1 slot | 360x |
+| 100 | 3600 tokens | 1 slot | 3600x |
+
+Text injection is linear in rule count. A superposed state is one slot,
+bounded by V.2's capacity rather than by the prompt.
+
+## V.5 Whitening is not a free win for ranking
+
+Measured separately, LoCoMo turn retrieval, n=494:
+
+| | hit@1 | hit@5 | hit@10 |
+|---|---|---|---|
+| BGE as shipped | 0.269 | 0.543 | 0.676 |
+| BGE whitened | 0.304 | 0.492 | 0.551 |
+
+It helps hit@1 by +0.035 (at this project's ~0.04 resolution limit, so a tie)
+and clearly *hurts* depth. That is the expected trade: anisotropy makes
+everything mildly similar, which helps fuzzy top-10 recall and destroys the
+component structure superposition needs. **Whiten for the substrate, not for
+the ranker** — they want opposite geometries, and that is a real design
+decision the system currently does not expose.
+
+## Status of the three claims
+
+| claim | verdict |
+|---|---|
+| memory as K/V inside attention | **proved exactly** (0.00e+00); end-to-end demo blocked — HuggingFace is 403 by proxy policy, so no decoder LM is reachable here |
+| N rules → one vector | **holds, after whitening**: 8 lossless, 16 at 97%, 32 at 89% — but only without settling |
+| schema absorption (CLS) | not yet tested |
