@@ -284,6 +284,101 @@ class HashedProjection:
         return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
 
+class SpacyVectorEmbedder:
+    """Averaged static word vectors — the first representation here that is not
+    purely lexical.
+
+    Every other embedder in this file matches *strings*: hashing, TF-IDF, BM25
+    and random projection all fail identically on vocabulary mismatch, which is
+    the central QA failure mode ("when did she attend the meeting?" against
+    "I went yesterday"). Static word vectors put synonyms near each other, so
+    this is the first row that can bridge that gap.
+
+    It is still order-insensitive — an average of word vectors, not a sentence
+    encoder — so it trades the other way: averaging washes out the rare
+    discriminative terms that sparse retrieval lives on. `idf_weighted=True`
+    partially recovers that by weighting each token by its IDF, which is the
+    standard fix and usually worth several points.
+
+    Needs `spacy` plus a vector-bearing model. Installable without HuggingFace:
+        pip install spacy
+        pip install https://github.com/explosion/spacy-models/releases/download/\
+en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
+    """
+
+    def __init__(
+        self,
+        docs: list[str] | None = None,
+        *,
+        model: str = "en_core_web_md",
+        idf_weighted: bool = False,
+    ) -> None:
+        import spacy
+
+        self._nlp = spacy.load(
+            model,
+            exclude=["parser", "ner", "tagger", "lemmatizer", "attribute_ruler"],
+        )
+        self.dim = int(self._nlp.vocab.vectors.shape[1])
+        self.idf_weighted = idf_weighted
+        self.idf: dict[str, float] = {}
+        if idf_weighted:
+            if docs is None:
+                raise ValueError("idf_weighted needs the corpus to build IDF")
+            df: Counter = Counter()
+            for doc in docs:
+                df.update(set(_tokenize(doc)))
+            n = len(docs)
+            self.idf = {t: math.log((1 + n) / (1 + c)) + 1.0 for t, c in df.items()}
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        out = torch.zeros(len(texts), self.dim)
+        for row, doc in enumerate(self._nlp.pipe(list(texts), batch_size=256)):
+            total = torch.zeros(self.dim)
+            weight_sum = 0.0
+            for token in doc:
+                if not token.has_vector or token.is_punct or token.is_space:
+                    continue
+                weight = (
+                    self.idf.get(token.lower_, 1.0) if self.idf_weighted else 1.0
+                )
+                total += weight * torch.tensor(token.vector)
+                weight_sum += weight
+            if weight_sum:
+                total /= weight_sum
+            out[row] = total
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+class HybridEmbedder:
+    """Concatenation of a lexical and a semantic embedder, each L2-normalised
+    and then weighted.
+
+    Cosine over the concatenation is exactly the weighted sum of the two
+    cosines, so `alpha` interpolates between pure lexical (1.0) and pure
+    semantic (0.0) while staying a single dense vector the Hopfield layer can
+    store unchanged. This is the standard way to get both, and it is where the
+    two failure modes cancel: lexical is precise but brittle to paraphrase,
+    semantic is robust to paraphrase but blurs rare terms.
+    """
+
+    def __init__(self, lexical, semantic, *, alpha: float = 0.5) -> None:
+        self.lexical = lexical
+        self.semantic = semantic
+        self.alpha = alpha
+        self.dim = lexical.dim + semantic.dim
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        left = self.lexical.encode(texts) * self.alpha
+        right = self.semantic.encode(texts) * (1.0 - self.alpha)
+        out = torch.cat([left, right], dim=-1)
+        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
 def dense_knn_ranker(conv, embedder):
     turns = conv.turns
     matrix = embedder.encode([t.memory_text for t in turns])
@@ -396,6 +491,25 @@ def main() -> None:
         rp = HashedProjection(corpus, dim=dim, weighting="bm25", seed=SEED)
         score_ranking(conversations, lambda c, e=rp: dense_knn_ranker(c, e),
                       f"dense kNN, BM25-weighted RP-{dim}")
+
+    # Beyond bag-of-words. Every row above matches strings and fails the same
+    # way on paraphrase; these are the first that can bridge it.
+    try:
+        plain = SpacyVectorEmbedder()
+        score_ranking(conversations, lambda c, e=plain: dense_knn_ranker(c, e),
+                      f"dense kNN, spaCy vectors ({plain.dim}d, mean)")
+        weighted = SpacyVectorEmbedder(corpus, idf_weighted=True)
+        score_ranking(conversations, lambda c, e=weighted: dense_knn_ranker(c, e),
+                      f"dense kNN, spaCy vectors ({weighted.dim}d, IDF-weighted)")
+        best_lexical = HashedProjection(corpus, dim=4096, weighting="bm25", seed=SEED)
+        for alpha in (0.7, 0.5, 0.3):
+            hybrid = HybridEmbedder(best_lexical, weighted, alpha=alpha)
+            score_ranking(
+                conversations, lambda c, e=hybrid: dense_knn_ranker(c, e),
+                f"dense kNN, HYBRID RP-4096 + spaCy (alpha={alpha:g} lexical)",
+            )
+    except (ImportError, OSError) as exc:
+        print(f"  [skipped spaCy rows: {exc}]")
 
     print("\nFULL PIPELINE (VAE latent -> DG key -> Hopfield settling)")
     lsa256 = LatentSemanticEmbedder(dim=256, seed=SEED).fit(corpus)

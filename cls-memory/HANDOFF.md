@@ -153,12 +153,44 @@ Random projection does not merely approach the sparse ceiling — at 4096 it
 **passes** it, and BM25 term weighting adds a little more. This is what the
 hypothesis predicted: SVD discards the tail, JL preserves it.
 
-**Confirm on the full 3-conversation set before promoting anything** (run
-`./run-next-step.sh`). If it holds, task 1.1 becomes: move `HashedProjection`
-into `cls_memory/embeddings.py`, make it the default at dim 4096, add tests,
-re-measure on both corpora. Note 4096-d dense keys are 4x the memory of the
-current 1024 — check the footprint before committing to it, and test whether
-2048 is the better trade.
+### 3.1b Confirmed on the full set, plus the bag-of-words question
+
+Full 3-conversation LoCoMo run, 494 questions — these supersede the smoke test:
+
+| ranking (kNN ceiling) | recall@1 | recall@5 |
+|---|---|---|
+| LSA-1024 (current default) | 0.251 | 0.526 |
+| TF-IDF sparse | 0.320 | 0.575 |
+| random-projection-4096 | 0.322 | 0.555 |
+| BM25-weighted RP-4096 | 0.330 | 0.581 |
+| spaCy vectors, mean (**pure semantic**) | 0.071 | 0.176 |
+| spaCy vectors, IDF-weighted | 0.121 | 0.285 |
+| hybrid RP-4096 + spaCy, alpha=0.7 | 0.338 | 0.583 |
+| **hybrid RP-4096 + spaCy, alpha=0.5** | **0.348** | 0.571 |
+| hybrid, alpha=0.3 | 0.267 | 0.460 |
+
+Two findings, and the second is the counterintuitive one:
+
+1. **Random projection beats truncated SVD, as predicted** — 0.330 vs 0.251,
+   and it passes the sparse TF-IDF ceiling. Promote it (task 1.1).
+2. **Moving *off* bag-of-words is a large regression.** Averaged static word
+   vectors score 0.121 against lexical's 0.330. Averaging destroys the rare
+   discriminative terms retrieval depends on, and no IDF weighting recovers it.
+   Moving *beyond* BOW — lexical plus semantic, concatenated and weighted —
+   is the best result in the project at 0.348, but that is +5.5% relative over
+   lexical alone, not a transformation. `alpha=0.3` (semantic-dominant) falls
+   back to 0.267, so the lexical half is doing most of the work at every mix.
+
+**This does not settle the transformer question.** spaCy vectors are
+order-insensitive and context-free; a real sentence encoder is a different bet
+and is still the largest untested lever (§3.4). Read the above as "averaged
+static word vectors are not the way off BOW", not "semantics do not help".
+
+**Task 1.1, revised:** move `HashedProjection` into `cls_memory/embeddings.py`
+with BM25 weighting at dim 4096, make it the default, add tests, re-measure on
+both corpora. Then decide on the hybrid separately: it needs a spaCy dependency
+and an extra 300 dims for +0.018 recall@1, which may or may not be worth it.
+Check the memory footprint first — 4096-d dense keys are 4x the current 1024.
 
 ### 3.2 The fallback, and probably the better system anyway
 
