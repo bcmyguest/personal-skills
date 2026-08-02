@@ -59,16 +59,21 @@ def parse_timestamp(raw: str) -> datetime:
     hour = int(match["h"]) % 12
     if match["ampm"].lower() == "pm":
         hour += 12
-    month = _MONTHS.get(match["month"].lower()[:3] and match["month"].lower(), 0)
-    if not month:  # month names are sometimes abbreviated
-        month = next(
-            (n for m, n in _MONTHS.items() if m.startswith(match["month"].lower()[:3])),
-            1,
-        )
-    return datetime(
-        int(match["year"]), month, int(match["day"]), hour, int(match["m"]),
-        tzinfo=timezone.utc,
+    name = match["month"].lower()
+    month = _MONTHS.get(name) or next(
+        (n for m, n in _MONTHS.items() if m.startswith(name[:3])), 0
     )
+    if not month:
+        return datetime(2023, 1, 1, tzinfo=timezone.utc)
+    try:
+        return datetime(
+            int(match["year"]), month, int(match["day"]), hour, int(match["m"]),
+            tzinfo=timezone.utc,
+        )
+    except ValueError:
+        # "31 February" and friends: the docstring promises a fallback, and
+        # datetime raising here would abort a whole benchmark run.
+        return datetime(2023, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass
@@ -107,6 +112,8 @@ class Conversation:
 
     @property
     def span_days(self) -> float:
+        if not self.turns:
+            return 0.0
         stamps = [t.timestamp for t in self.turns]
         return (max(stamps) - min(stamps)).total_seconds() / 86400.0
 
@@ -143,11 +150,15 @@ def load(path: Path | str = DEFAULT_PATH) -> list[Conversation]:
             stamp = parse_timestamp(conv.get(f"{key}_date_time", ""))
             for turn in conv[key]:
                 text = (turn.get("text") or "").strip()
-                if not text:
+                dia_id = turn.get("dia_id") or ""
+                if not text or not dia_id:
+                    # A blank dia_id would collide with every other blank one in
+                    # turn_by_id(), silently inflating apparent evidence
+                    # resolution.
                     continue
                 turns.append(
                     Turn(
-                        dia_id=turn.get("dia_id", ""),
+                        dia_id=dia_id,
                         speaker=turn.get("speaker", "?"),
                         text=text,
                         session=key,
@@ -174,12 +185,13 @@ def load(path: Path | str = DEFAULT_PATH) -> list[Conversation]:
 def stats(conversations: list[Conversation]) -> dict:
     turns = sum(len(c.turns) for c in conversations)
     questions = sum(len(c.questions) for c in conversations)
-    answerable = sum(
-        1
-        for c in conversations
-        for q in c.questions
-        if q.evidence and any(e in c.turn_by_id() for e in q.evidence)
-    )
+    answerable = 0
+    for conv in conversations:
+        # Hoisted: rebuilding this per (question, evidence) made stats() O(Q*E*T).
+        ids = conv.turn_by_id()
+        answerable += sum(
+            1 for q in conv.questions if any(e in ids for e in q.evidence)
+        )
     return {
         "conversations": len(conversations),
         "turns": turns,

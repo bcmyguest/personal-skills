@@ -41,6 +41,13 @@ class IngestionAction(str, Enum):
     adding a second copy."""
     STORED_EVERGREEN = "stored_evergreen"
     """Bypassed the gate because it is a business rule."""
+    REJECTED = "rejected"
+    """The text produced a zero embedding -- no in-vocabulary terms at all
+    (empty, whitespace, punctuation, emoji, or entirely out-of-vocabulary
+    script). Such a key cannot be compared to anything: deduplication never
+    fires on it, and in the Hopfield logits it scores log(w) regardless of the
+    query, beating any real memory below cosine 0.5. One junk record was
+    measured hijacking retrieval for unrelated queries at weight 0.985."""
 
 
 @dataclass
@@ -108,6 +115,18 @@ class SynapticIngestionPipeline:
     ) -> IngestionResult:
         now = now or utcnow()
         embedding, latent, key, surprise = self._encode(text)
+
+        # Reject before anything else: a degenerate key poisons dedup and
+        # retrieval, and the evergreen bypass would otherwise walk it straight
+        # past the gate.
+        if not torch.isfinite(key).all() or float(key.norm()) < 1e-8:
+            return IngestionResult(
+                action=IngestionAction.REJECTED,
+                text=text,
+                novelty=surprise,
+                threshold=self.gate.threshold,
+            )
+
         is_novel, threshold = self.gate(surprise)
 
         # 1. Near-duplicate check runs first: re-observing a known fact is a

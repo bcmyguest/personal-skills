@@ -192,7 +192,13 @@ class ConsolidationEngine:
         with torch.no_grad():
             return self.cortex.decode(latents)
 
-    def replay(self, n: int | None = None, *, generator: torch.Generator | None = None) -> Tensor:
+    def replay(
+        self,
+        n: int | None = None,
+        *,
+        now: datetime | None = None,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
         """Generate embedding-space replay samples from the hippocampus.
 
         A mixture of `episodic_ratio` true-episode replay and generated
@@ -205,7 +211,10 @@ class ConsolidationEngine:
         if len(self.store) == 0 or n <= 0:
             return torch.empty(0, self.cortex.config.input_dim)
 
-        self.store.refresh_priors()
+        # Refresh at `now`, not wall-clock: a simulation consolidating at
+        # now=+365d used to weight replay as if every memory were fresh while
+        # the sweep in the same pass deleted them as stale.
+        self.store.refresh_priors(now)
         ratio = min(max(c.episodic_ratio, 0.0), 1.0)
         n_episodic = int(round(n * ratio))
         if ratio > 0.0:
@@ -245,7 +254,7 @@ class ConsolidationEngine:
             n_replay = int(round(n_new * c.interleave_ratio / max(1e-6, 1 - c.interleave_ratio)))
         else:
             n_replay = c.replay_batch
-        replayed = self.replay(max(n_replay, 0), generator=generator)
+        replayed = self.replay(max(n_replay, 0), now=now, generator=generator)
 
         # Guard BEFORE the cat: torch.cat([]) raises, so the old guard below it
         # was unreachable and sleep() on a fresh system died with an opaque
@@ -257,7 +266,7 @@ class ConsolidationEngine:
 
         with torch.no_grad():
             loss_before = float(self.cortex.elbo_loss(batch)[0])
-        self.cortex.fit(batch, epochs=epochs, lr=lr)
+        self.cortex.fit(batch, epochs=epochs, lr=lr, generator=generator)
         with torch.no_grad():
             loss_after = float(self.cortex.elbo_loss(batch)[0])
 

@@ -249,6 +249,7 @@ class PatternCompleter:
         *,
         top_k: int = 5,
         factor: float = 0.15,
+        beta: float | None = None,
         reinforce: bool = False,
         **kwargs,
     ) -> RecallResult:
@@ -263,7 +264,9 @@ class PatternCompleter:
         return self.recall(
             query,
             top_k=top_k,
-            beta=self.store.mhn.config.beta * factor,
+            # An explicit beta wins over the factor; forwarding both used to
+            # raise TypeError: got multiple values for 'beta'.
+            beta=self.store.mhn.config.beta * factor if beta is None else beta,
             reinforce=reinforce,
             **kwargs,
         )

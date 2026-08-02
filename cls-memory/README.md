@@ -24,7 +24,7 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-95 tests pass. `examples/demo.py` runs the full lifecycle end to end.
+123 tests pass. `examples/demo.py` runs the full lifecycle end to end.
 `experiments/benchmark.py` evaluates on a labelled synthetic corpus and
 `experiments/benchmark_locomo.py` on **real conversational data with
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
@@ -40,7 +40,7 @@ the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 95 passed
+uv run pytest                       # 123 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -428,7 +428,35 @@ values that were both exactly 0.5; and two assertions were true by construction.
 Coverage was added for energy descent under priors and masking, the `log_density`
 normalising constant, and the replay *distribution* rather than just its shape.
 
-Known-and-accepted, not fixed: `ModernHopfieldNetwork` ignores
-`MemorySystemConfig.device` (CPU only for now), `basin_depth` is single-query,
-and `PatternCompleter.occlude` remains on the read path though it is really
-evaluation tooling.
+## 12. Hardening review
+
+A second review probed robustness rather than mathematics. It confirmed a good
+deal was already sound — deduplication, empty-store handling on every entry
+point, LSA determinism, the randomised SVD's numerics, bounded gate window, no
+mutable defaults, no aliasing in returned collections. Fixed since, each
+reproduced before being changed and now covered by `tests/test_hardening.py`:
+
+| Defect | Why it mattered | Fix |
+|---|---|---|
+| One NaN/Inf pattern poisoned `energy`, `attention`, `retrieve`, `log_density` and replay for the **whole store, every query, permanently** — silently | unrecoverable without hand-locating the row | reject non-finite rows at `write` |
+| Degenerate text (empty, whitespace, punctuation, emoji, CJK, pure OOV) produced zero embeddings; dedup cannot catch them (cosine of two zero vectors is 0) and their logit is `log(w)` regardless of query, beating any memory below cosine 0.5 | one junk record hijacked retrieval for unrelated queries at weight 0.985 | new `IngestionAction.REJECTED`; `write` rejects zero-norm |
+| `MemoryStore.reindex` removed before writing | a bad `reencode_key` left records with zero patterns — store permanently unusable, reachable automatically from `consolidate` | build and validate first, restore on failure |
+| Seeding was `torch.manual_seed`, i.e. process-global | constructing a second system silently changed an existing one's training and replay | per-instance `torch.Generator`, `fork_rng` for module init |
+| `write` reallocated the whole buffer per call | O(N²): doubling N cost 3.6×, hours of copying at 100k | geometric-growth capacity buffer — now **1.9× per doubling**, 8000 writes 37.9s → 0.78s |
+| Generated replay did not cap its ULA step (the episodic half already did) | at β=128 samples blew up 1e6× and were trained on with `improved=True` reported | same `4/β` bound both sides |
+| `consolidate` guarded *after* `torch.cat([])` | `sleep()` on a fresh system died with an opaque torch error | guard before |
+| LSA fit allocated a dense N×V matrix | 2.1 GB peak at 10k docs, ~8 GB at 100k | sparse COO + `torch.sparse.mm` |
+| `relative_drop >= 1` accepted | silently reintroduced an already-fixed defect (pruned an untouched cortex) | validate all config at construction |
+| `bootstrap()` did not re-index, unlike `consolidate` | calling it twice staled LATENT keys | re-index when the store is non-empty |
+
+Also fixed: store/pattern desynchronisation now raises via `assert_consistent`;
+`remove` deduplicates ids; iteration is snapshotted against concurrent removal;
+`replay` honours `now` instead of wall-clock; `gist(beta=...)` no longer raises;
+config is deep-copied rather than mutated in place; `sweep` and `stats` agree on
+the empty-store sentinel; and several loader bugs (a date fallback that raised,
+`span_days` on empty input, an O(Q·E·T) rebuild, blank-`dia_id` collisions).
+
+Known and accepted, not fixed: `MemorySystemConfig.device` is ignored (CPU
+only), `basin_depth` is single-query, `PatternCompleter.occlude` is evaluation
+tooling on the read path, and `record.key` duplicates its pattern row (dropping
+it in favour of a view would halve key memory).

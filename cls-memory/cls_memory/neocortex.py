@@ -67,25 +67,44 @@ class SlowLearningNeocortex(nn.Module):
         return self.to_recon(self.decoder(z))
 
     @staticmethod
-    def reparameterize(mu: Tensor, logvar: Tensor) -> Tensor:
-        return mu + torch.randn_like(mu) * torch.exp(0.5 * logvar)
+    def reparameterize(
+        mu: Tensor, logvar: Tensor, generator: torch.Generator | None = None
+    ) -> Tensor:
+        noise = torch.randn(
+            mu.shape, generator=generator, dtype=mu.dtype, device=mu.device
+        )
+        return mu + noise * torch.exp(0.5 * logvar)
 
-    def forward(self, x: Tensor, *, sample: bool = True) -> VAEOutput:
+    def forward(
+        self,
+        x: Tensor,
+        *,
+        sample: bool = True,
+        generator: torch.Generator | None = None,
+    ) -> VAEOutput:
         mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar) if sample else mu
+        z = self.reparameterize(mu, logvar, generator) if sample else mu
         return VAEOutput(recon=self.decode(z), mu=mu, logvar=logvar, z=z)
 
     # ------------------------------------------------------------------ loss
 
-    def losses(self, x: Tensor, *, sample: bool = True) -> tuple[Tensor, Tensor]:
+    def losses(
+        self,
+        x: Tensor,
+        *,
+        sample: bool = True,
+        generator: torch.Generator | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """Per-sample (reconstruction, KL). Both summed over feature dims."""
-        out = self.forward(x, sample=sample)
+        out = self.forward(x, sample=sample, generator=generator)
         recon = ((out.recon - x) ** 2).sum(-1)
         kl = -0.5 * (1 + out.logvar - out.mu.pow(2) - out.logvar.exp()).sum(-1)
         return recon, kl
 
-    def elbo_loss(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        recon, kl = self.losses(x)
+    def elbo_loss(
+        self, x: Tensor, *, generator: torch.Generator | None = None
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        recon, kl = self.losses(x, generator=generator)
         loss = (recon + self.config.kl_weight * kl).mean()
         return loss, recon.mean().detach(), kl.mean().detach()
 
@@ -132,6 +151,7 @@ class SlowLearningNeocortex(nn.Module):
         batch_size: int | None = None,
         lr: float | None = None,
         optimizer: torch.optim.Optimizer | None = None,
+        generator: torch.Generator | None = None,
         verbose: bool = False,
     ) -> list[float]:
         """Slow learning: many small gradient steps over the whole corpus.
@@ -148,11 +168,11 @@ class SlowLearningNeocortex(nn.Module):
         history: list[float] = []
         n = x.shape[0]
         for epoch in range(epochs):
-            perm = torch.randperm(n)
+            perm = torch.randperm(n, generator=generator)
             total = 0.0
             for i in range(0, n, batch_size):
                 batch = x[perm[i : i + batch_size]]
-                loss, _, _ = self.elbo_loss(batch)
+                loss, _, _ = self.elbo_loss(batch, generator=generator)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 opt.step()

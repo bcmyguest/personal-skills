@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import warnings
 from typing import Protocol, Sequence, runtime_checkable
 
 import torch
@@ -114,6 +115,9 @@ class LatentSemanticEmbedder:
         self._vocab: dict[str, int] = {}
         self._idf: Tensor | None = None
         self._components: Tensor | None = None
+        self.rank: int = 0
+        # Components the corpus actually supports. Below `dim` means the
+        # trailing coordinates are structurally zero; fit() warns when so.
 
     # ---------------------------------------------------------------- features
 
@@ -136,15 +140,44 @@ class LatentSemanticEmbedder:
                 counts[idx] = counts.get(idx, 0.0) + 1.0
         return counts
 
-    def _tfidf(self, texts: Sequence[str]) -> Tensor:
+    def _tfidf(self, texts: Sequence[str], *, sparse: bool = False) -> Tensor:
+        """Row-normalised TF-IDF.
+
+        `sparse=True` returns a COO tensor. The dense path allocates
+        len(texts) x len(vocab) floats, which is fine for an encode batch but
+        not for a fit: measured, a 10k-document corpus with a 20k vocabulary
+        peaked at 2.1 GB, extrapolating to ~8 GB in one allocation at 100k.
+        """
         if self._idf is None:
             raise RuntimeError("call fit() before encoding")
-        out = torch.zeros(len(texts), len(self._vocab))
+        if not sparse:
+            out = torch.zeros(len(texts), len(self._vocab))
+            for row, text in enumerate(texts):
+                for idx, count in self._counts(text).items():
+                    out[row, idx] = 1.0 + math.log(count)
+            out *= self._idf
+            return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
         for row, text in enumerate(texts):
-            for idx, count in self._counts(text).items():
-                out[row, idx] = 1.0 + math.log(count)
-        out *= self._idf
-        return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+            counts = self._counts(text)
+            if not counts:
+                continue
+            weights = {
+                idx: (1.0 + math.log(c)) * float(self._idf[idx])
+                for idx, c in counts.items()
+            }
+            norm = math.sqrt(sum(v * v for v in weights.values())) or 1.0
+            for idx, value in weights.items():
+                rows.append(row)
+                cols.append(idx)
+                vals.append(value / norm)
+        indices = torch.tensor([rows, cols], dtype=torch.long)
+        return torch.sparse_coo_tensor(
+            indices, torch.tensor(vals), (len(texts), len(self._vocab))
+        ).coalesce()
 
     # -------------------------------------------------------------------- fit
 
@@ -171,18 +204,22 @@ class LatentSemanticEmbedder:
             [math.log((1 + n) / (1 + document_frequency[t])) + 1.0 for t in keep]
         )
 
-        matrix = self._tfidf(texts)
+        matrix = self._tfidf(texts, sparse=True)
         # Randomised range finder, then an exact SVD on the small projection.
         # Cheaper than a full SVD on a 20k-column matrix and accurate enough at
         # the ranks used here.
         k = min(self.dim, matrix.shape[0], matrix.shape[1])
         generator = torch.Generator().manual_seed(self.seed)
         omega = torch.randn(matrix.shape[1], min(k + 16, matrix.shape[1]), generator=generator)
-        sample = matrix @ omega
+        sample = torch.sparse.mm(matrix, omega)
+        transposed = matrix.t().coalesce()
         for _ in range(2):  # power iterations sharpen the spectrum
-            sample = matrix @ (matrix.T @ sample)
+            sample = torch.sparse.mm(matrix, torch.sparse.mm(transposed, sample))
         q, _ = torch.linalg.qr(sample)
-        _, _, vh = torch.linalg.svd(q.T @ matrix, full_matrices=False)
+        # (q^T M) = (M^T q)^T, and only the sparse-dense product is supported.
+        _, _, vh = torch.linalg.svd(
+            torch.sparse.mm(transposed, q).T, full_matrices=False
+        )
         components = vh[:k].T.contiguous()
 
         # Honour the requested dim even when the corpus supports fewer
@@ -194,9 +231,13 @@ class LatentSemanticEmbedder:
             padding = torch.zeros(components.shape[0], self.dim - components.shape[1])
             components = torch.cat([components, padding], dim=1)
         self.rank = int(k)
-        """Components actually supported by the corpus; below `dim` means the
-        trailing coordinates are structurally zero."""
         self._components = components
+        if self.rank < self.dim:
+            warnings.warn(
+                f"corpus of {len(texts)} documents supports only {self.rank} of "
+                f"{self.dim} components; the rest are structurally zero",
+                stacklevel=2,
+            )
         return self
 
     @property

@@ -56,7 +56,10 @@ class MemoryStore:
         return len(self._records)
 
     def __iter__(self) -> Iterator[MemoryRecord]:
-        return iter(self._records)
+        # Snapshot: `remove` rebinds `self._records`, so a live iterator would
+        # silently walk the stale list rather than raising the way mutating a
+        # dict or list during iteration would.
+        return iter(list(self._records))
 
     def __contains__(self, record_id: str) -> bool:
         return record_id in self._index
@@ -101,19 +104,57 @@ class MemoryStore:
         Required after anything that changes the encoder -- notably training
         the cortex, which silently invalidates latent-derived keys. `key_of`
         takes a MemoryRecord and returns its new key.
+
+        Atomic: the new patterns are built and validated before anything is
+        removed, and the old buffers are restored if the write fails. Removing
+        first left the store with records but zero patterns on any bad key --
+        permanently unusable, since `refresh_priors`, `sweep` and `recall` all
+        then raise, and `consolidate` calls this automatically.
         """
         if not self._records:
             return
         keys = torch.stack([key_of(r) for r in self._records])
+        if keys.shape[-1] != self.mhn.dim:
+            raise ValueError(
+                f"reindex produced keys of dim {keys.shape[-1]}, "
+                f"expected {self.mhn.dim}"
+            )
         priors = self.mhn.log_prior.clone()
+        snapshot = self.mhn.patterns.clone()
         self.mhn.remove(torch.arange(len(self._records)))
-        self.mhn.write(keys, priors)
+        try:
+            self.mhn.write(keys, priors)
+        except Exception:
+            self.mhn.patterns = snapshot
+            self.mhn.log_prior = priors
+            raise
         for row, record in enumerate(self._records):
             record.key = self.mhn.patterns[row].clone()
 
+    def assert_consistent(self) -> None:
+        """Records, index and pattern rows must agree.
+
+        Cheap enough to call on every mutating path. Desynchronisation is
+        silent otherwise: `record_at(row)` happily returns the wrong record
+        after a direct `store.mhn.remove(...)`, and nothing raises.
+        """
+        if len(self._records) != len(self.mhn):
+            raise RuntimeError(
+                f"store desynchronised: {len(self._records)} records but "
+                f"{len(self.mhn)} patterns. Mutate the store, never store.mhn."
+            )
+        if len(self._index) != len(self._records):
+            raise RuntimeError("store index desynchronised from records")
+
     def remove(self, record_ids: Iterable[str]) -> list[str]:
         """Forget records by id. Returns the ids actually removed."""
-        ids = [rid for rid in record_ids if rid in self._index]
+        # Deduplicate: remove(["a", "a"]) previously reported two removals.
+        seen: set[str] = set()
+        ids = [
+            rid
+            for rid in record_ids
+            if rid in self._index and not (rid in seen or seen.add(rid))
+        ]
         if not ids:
             return []
         rows = sorted(self._index[rid] for rid in ids)
@@ -157,6 +198,7 @@ class MemoryStore:
         """
         if not self._records:
             return
+        self.assert_consistent()
         w = self.salience_vector(now)
         self.mhn.set_log_prior(torch.log(w.clamp_min(1e-12)).clamp_min(MIN_LOG_PRIOR))
 
@@ -166,8 +208,11 @@ class MemoryStore:
         Evergreen records always have salience 1 and can never be pruned here.
         """
         now = now or utcnow()
+        self.assert_consistent()
         if not self._records:
-            return SweepReport(0, 0, [], 1.0, 1.0)
+            # 0.0, matching stats(); the two used to disagree on the sentinel
+            # for "no memories", reporting 1.0 here and 0.0 there.
+            return SweepReport(0, 0, [], 0.0, 0.0)
 
         w = self.salience_vector(now)
         doomed = [
@@ -184,8 +229,8 @@ class MemoryStore:
             evaluated=evaluated,
             pruned_decayed=len(pruned),
             pruned_ids=pruned,
-            min_salience=float(live.min()) if live.numel() else 1.0,
-            mean_salience=float(live.mean()) if live.numel() else 1.0,
+            min_salience=float(live.min()) if live.numel() else 0.0,
+            mean_salience=float(live.mean()) if live.numel() else 0.0,
         )
 
     # ----------------------------------------------------------------- misc

@@ -11,6 +11,7 @@ want the whole loop with one object.
 from __future__ import annotations
 
 import warnings
+import copy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Sequence
@@ -45,8 +46,15 @@ class OrganizationalMemory:
         *,
         embedder: Embedder | None = None,
     ) -> None:
-        self.config = config or MemorySystemConfig()
-        torch.manual_seed(self.config.seed)
+        # Deep-copied: __init__ reconciles cortex.input_dim with the embedder,
+        # and mutating a config the caller still holds silently rewrites it for
+        # every other system built from it.
+        self.config = copy.deepcopy(config) if config is not None else MemorySystemConfig()
+        # A per-instance generator, not torch.manual_seed. Global seeding made
+        # reproducibility order-dependent: merely constructing a second system
+        # perturbed an existing one's training and replay. A library should not
+        # mutate process-global RNG state.
+        self.generator = torch.Generator().manual_seed(self.config.seed)
 
         # LatentSemanticEmbedder by default, not HashingEmbedder: measured on
         # LoCoMo, hashing gets recall@5 0.045 against ground-truth evidence
@@ -59,7 +67,13 @@ class OrganizationalMemory:
             # Keep the cortex honest about its actual input width.
             self.config.cortex.input_dim = self.embedder.dim
 
-        self.cortex = SlowLearningNeocortex(self.config.cortex)
+        # nn.Linear initialisation draws from the *global* RNG. fork_rng gives
+        # deterministic weights for a given seed while restoring the caller's
+        # global stream on exit, so constructing one system cannot perturb
+        # another's results.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(self.config.seed)
+            self.cortex = SlowLearningNeocortex(self.config.cortex)
         self.gate = NoveltyGate(self.config.novelty)
         self.key_encoder = KeyEncoder(
             self.config.key.mode,
@@ -138,7 +152,15 @@ class OrganizationalMemory:
                 )
 
         x = self.embedder.encode(corpus)
-        history = self.cortex.fit(x, epochs=epochs, verbose=verbose)
+        history = self.cortex.fit(
+            x, epochs=epochs, generator=self.generator, verbose=verbose
+        )
+        # Training moved the encoder, so latent-derived keys for anything
+        # already stored are stale -- the same hazard consolidate() handles.
+        # Reachable by calling bootstrap() twice, or bootstrapping after an
+        # initial ingest.
+        if len(self.store):
+            self.store.reindex(self._reencode_key)
         self.ingestion.calibrate(corpus)
         return BootstrapReport(
             corpus_size=len(corpus),
@@ -190,7 +212,9 @@ class OrganizationalMemory:
     ) -> ConsolidationReport:
         """Run one consolidation cycle (replay + interleaved training + prune)."""
         new_data = self.embedder.encode(list(new_texts)) if new_texts else None
-        return self.consolidation.consolidate(new_data, epochs=epochs, now=now)
+        return self.consolidation.consolidate(
+            new_data, epochs=epochs, now=now, generator=self.generator
+        )
 
     def sweep(self, now: datetime | None = None) -> SweepReport:
         """Apply the forgetting curve without touching the cortex."""

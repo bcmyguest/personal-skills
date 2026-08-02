@@ -100,13 +100,33 @@ class ModernHopfieldNetwork(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.config = config or HopfieldConfig()
-        self.register_buffer("patterns", torch.empty(0, dim))
-        self.register_buffer("log_prior", torch.empty(0))
+        self.register_buffer("_patterns", torch.empty(0, dim))
+        self.register_buffer("_log_prior", torch.empty(0))
+        self._n_used = 0
 
     # ------------------------------------------------------------------ state
 
+    @property
+    def patterns(self) -> Tensor:
+        """The live pattern rows. A view into the capacity buffer, so it is
+        exactly `len(self)` rows regardless of allocated capacity."""
+        return self._patterns[: self._n_used]
+
+    @patterns.setter
+    def patterns(self, value: Tensor) -> None:
+        self._patterns = value
+        self._n_used = int(value.shape[0])
+
+    @property
+    def log_prior(self) -> Tensor:
+        return self._log_prior[: self._n_used]
+
+    @log_prior.setter
+    def log_prior(self, value: Tensor) -> None:
+        self._log_prior = value
+
     def __len__(self) -> int:
-        return int(self.patterns.shape[0])
+        return int(self._n_used)
 
     @property
     def is_empty(self) -> bool:
@@ -145,10 +165,33 @@ class ModernHopfieldNetwork(torch.nn.Module):
             if lp.shape[0] != x.shape[0]:
                 raise ValueError("log_prior must have one entry per pattern")
 
-        start = len(self)
-        self.patterns = torch.cat([self.patterns, x], dim=0)
-        self.log_prior = torch.cat([self.log_prior, lp], dim=0)
-        return torch.arange(start, len(self))
+        # Geometric growth, not a fresh torch.cat per write. Reallocating the
+        # whole buffer on every single-pattern write made ingestion O(N^2):
+        # measured at d=2048, doubling N cost ~3.6x the time, which extrapolates
+        # to hours of pure buffer copying at 100k memories.
+        start = self._n_used
+        needed = start + x.shape[0]
+        # Capacity is the ALLOCATED buffer, not the live view: reading it from
+        # `self.patterns` (length n_used) made every write look like it needed
+        # to grow, which is the O(N^2) this replaces.
+        if needed > self._patterns.shape[0]:
+            capacity = max(8, self._patterns.shape[0])
+            while capacity < needed:
+                capacity *= 2
+            grown = torch.zeros(
+                capacity, self.dim, dtype=self.patterns.dtype, device=self.patterns.device
+            )
+            grown[:start] = self.patterns[:start]
+            self.patterns = grown
+            grown_prior = torch.zeros(
+                capacity, dtype=self.log_prior.dtype, device=self.log_prior.device
+            )
+            grown_prior[:start] = self.log_prior[:start]
+            self.log_prior = grown_prior
+        self._patterns[start:needed] = x
+        self._log_prior[start:needed] = lp
+        self._n_used = needed
+        return torch.arange(start, needed)
 
     def remove(self, indices: Tensor | list[int]) -> None:
         """Forget patterns by row index (compacts the buffers)."""
@@ -158,8 +201,11 @@ class ModernHopfieldNetwork(torch.nn.Module):
             return
         keep = torch.ones(len(self), dtype=torch.bool)
         keep[indices.to(torch.long)] = False
-        self.patterns = self.patterns[keep].contiguous()
-        self.log_prior = self.log_prior[keep].contiguous()
+        kept_patterns = self.patterns[keep].contiguous()
+        kept_prior = self.log_prior[keep].contiguous()
+        self._patterns = kept_patterns
+        self._log_prior = kept_prior
+        self._n_used = int(kept_patterns.shape[0])
 
     def set_log_prior(self, log_prior: Tensor) -> None:
         """Refresh all salience weights at once (called by the decay sweep)."""
@@ -168,7 +214,7 @@ class ModernHopfieldNetwork(torch.nn.Module):
             raise ValueError("log_prior must be finite; got NaN or Inf")
         if log_prior.shape[0] != len(self):
             raise ValueError("log_prior length must match the number of patterns")
-        self.log_prior = log_prior.detach()
+        self._log_prior[: self._n_used] = log_prior.detach()
 
     # ------------------------------------------------------------- mechanics
 
