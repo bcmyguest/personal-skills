@@ -513,3 +513,138 @@ Sparse TF-IDF still beats the best dense configuration on its own ceiling
 Hopfield settling to rank — is the obvious next step and is not implemented. A
 real sentence encoder remains untried here because HuggingFace is unreachable
 from this environment.
+
+---
+
+# Part IV — Does the energy earn its keep?
+
+Parts I–III measured *retrieval quality* and found the Hopfield network ties
+plain cosine kNN exactly (0.172 vs 0.174 hit@1). That is not a near miss: hit@1
+against a single gold item is the metric where nearest-neighbour is optimal by
+construction, so no attractor dynamics can beat it. Part IV tests the two
+things an energy model has that a similarity score does not — a *normalised*
+density, and a landscape that write-time decisions can reshape.
+
+## IV.1 Abstention — `experiments/abstention.py`
+
+LoCoMo category 5 is 446 adversarial questions whose answer field is
+deliberately empty (the question presupposes something false, usually by
+attributing one speaker's action to the other). Every earlier harness discarded
+them. They are the natural test for "does the organisation actually know this?"
+
+10 conversations, 1977 questions (1531 answerable, 446 adversarial), hybrid
+RP-4096 + BGE embeddings, ROC AUC with a 2000-draw bootstrap:
+
+| signal | AUC @ β=128 | rejects adversarial @ 80% coverage |
+|---|---|---|
+| `cos_top1` (baseline) | 0.480 [0.448, 0.511] | 20.6% |
+| `cos_margin` | 0.471 [0.441, 0.504] | 18.6% |
+| `neg_attn_ent` | 0.465 [0.433, 0.494] | 16.6% |
+| `log_density` | 0.481 [0.449, 0.512] | 21.1% |
+| `neg_depth_nats` | 0.481 [0.450, 0.512] | 20.9% |
+| `neg_settle` | 0.505 [0.475, 0.536] | 20.6% |
+
+**Every signal is at chance, and cosine is slightly _below_ it.** Adversarial
+questions score *higher* confidence than answerable ones, which is the corpus
+working as designed: an adversarial question is built by taking a real turn and
+swapping the attribution, so it is a near-verbatim paraphrase of something that
+genuinely is in memory. Density cannot help, because the region really is dense.
+
+Out-of-fold (held out by conversation, since the embedder and store are fitted
+per conversation) the energy adds **−0.000** over cosine alone: 0.512 → 0.512.
+
+### The β dependence, and why it does not rescue the result
+
+`log_density` was suspected of being a relabelling of `cos_top1`. Spearman ρ
+against cosine, swept over β:
+
+| β | ρ(`log_density`, `cos_top1`) | ρ(`neg_depth_nats`, `cos_top1`) | energy adds (out-of-fold) |
+|---|---|---|---|
+| 8 | +0.242 | +0.285 | +0.009 |
+| 32 | +0.835 | +0.851 | +0.011 |
+| 128 | ≈1.0 (Δ CI [−0.000, +0.003]) | ≈1.0 | −0.000 |
+| 512 | **+1.0000** | **+1.0000** | −0.000 |
+
+At high β the mixture density is dominated by its nearest component, so
+`log_density` degenerates into a monotone function of top-1 cosine and
+*cannot* differ from it. That is a structural fact, not a tuning accident, and
+it explains the Part I–III tie directly.
+
+At β=8 the energy **is** a genuinely distinct signal (ρ=0.24) and the paired
+bootstrap calls it a win (+0.038 [+0.003, +0.077]). This does not rescue
+anything: it moves AUC from 0.480 to ~0.518 — from below chance to chance. Over
+5 signals × 4 values of β, two CIs excluding zero is roughly what multiple
+comparisons predict. **No configuration of this system can tell an answerable
+question from an unanswerable one.**
+
+## IV.2 Rules under a token budget — `experiments/rulebook{,_eval}.py`
+
+LoCoMo cannot measure the use case this design was actually pitched at:
+remembering *rules* without bloating context. Nothing in it is ever superseded,
+and it has no cost model for retrieving too much. `rulebook.py` is a 26-rule
+organizational policy corpus built for the two failure modes that matter —
+supersession chains (v1→v2→v3, lexically near-identical) and scope
+near-duplicates (EU/US, employee/contractor, prod/staging) — with 16 situation
+queries. Budget = 256 tokens ≈ 7 rules, counted with the real BGE tokenizer.
+
+`stale@256` is the number nobody measures: did a **superseded** rule get
+injected? A missing rule makes the model say "I don't know". An obsolete rule
+makes it confidently quote revoked policy, which is worse than empty context.
+
+| arm | coverage@256 | tokens@cover | stale@256 |
+|---|---|---|---|
+| BM25 | 0.92 | 115 | 0.81 |
+| BGE kNN | 0.94 | 76 | 0.88 |
+| BGE + recency rerank | 0.94 | 83 | 0.81 |
+| MHN, no decay | 0.94 | 76 | 0.88 |
+| MHN + recency log-prior | 0.94 | 81 | 0.88 |
+| **INGEST-GATED kNN (t=0.75)** | 0.94 | 115 | **0.00** |
+| ORACLE (current-only kNN) | 1.00 | 58 | 0.00 |
+
+Three findings:
+
+1. **Finding the right rule is easy; not dragging the dead one along is not.**
+   Coverage is 0.92–0.94 everywhere. Staleness is 81–88% everywhere on the
+   read side. The entire prize is supersession.
+2. **Read-side machinery does not touch it.** The Ebbinghaus log-prior folded
+   into the energy — the mechanism this architecture is built around — moves
+   `stale@256` from 0.88 to 0.88. A recency *rerank* does no better (0.81).
+   Reordering cannot help when the budget admits ~7 rules and both versions
+   rank in the top few: you inject them both either way.
+3. **Write-time gating solves it completely.** Streaming the rules in date
+   order and *replacing* a stored rule when a new one lands within cosine 0.75
+   takes `stale@256` from 0.88 to **0.00** — matching the oracle.
+
+### Where the gate fails, and what the energy adds (nothing)
+
+Separating the 7 true supersessions from the 18 other write decisions:
+
+| signal | AUC |
+|---|---|
+| top-1 cosine | 0.984 |
+| energy explained (normalised over the store) | 0.984 |
+
+Identical. The single error is the same for both: `exp.travel.eu` and
+`exp.travel.us` sit at cosine 0.854 — *above* the weakest genuine supersession
+pair — so any threshold that catches all real revisions also deletes a live
+scope sibling. That costs the gate its coverage (tokens@cover 115 vs the
+oracle's 58). **This is not a memory-model problem.** No density, energy, or
+attractor formulation distinguishes "revision of the same rule" from "the
+sibling rule for a different region"; that needs a scope/metadata comparison.
+
+An earlier version of this probe reported AUC 1.000 for both signals while the
+gate two functions away was visibly making mistakes. It used `r.day < new.day`,
+which silently excluded every same-day pair — and the same-day pairs are
+exactly the scope siblings. Fourth instance in this project of a check written
+to verify a mechanism being wrong in the mechanism's favour (see HANDOFF §5).
+
+## What Part IV means for the design
+
+- The **Hopfield retrieval layer is not the valuable component.** At usable β it
+  is provably a relabelling of cosine similarity; at β low enough to differ, it
+  is no better at anything measured.
+- The **ingestion gate is** — it is the only intervention that moved a metric
+  (0.88 → 0.00 stale), and it is cheap, because it pays once per write instead
+  of once per query.
+- The remaining error is **scope**, not similarity, and wants structured
+  metadata rather than more memory physics.
