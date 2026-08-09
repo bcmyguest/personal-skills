@@ -779,3 +779,85 @@ decision the system currently does not expose.
 | memory as K/V inside attention | **proved exactly** (0.00e+00); end-to-end demo blocked — HuggingFace is 403 by proxy policy, so no decoder LM is reachable here |
 | N rules → one vector | **holds, after whitening**: 8 lossless, 16 at 97%, 32 at 89% — but only without settling |
 | schema absorption (CLS) | not yet tested |
+
+---
+
+# Part VI — Promoting Part V into the library
+
+Part V was measured in `experiments/superposition.py`. This section records what
+was moved into `cls_memory/` and what changed when it was re-measured through
+the library classes rather than the prototype.
+
+## VI.1 What was promoted
+
+| prototype | library |
+|---|---|
+| `whiten(x, floor=1e-2)` — refits an SVD on whatever matrix it is handed | `cls_memory.whitening.Whitener` — `fit(corpus)` once, then the **same** mean/rotation/scale applied to documents and queries; serialises through `state_dict` |
+| `anisotropy(x, generator)` | `cls_memory.whitening.anisotropy(x)` — fixed default seed so it can be asserted on |
+| `superpose(...)` — seeded from the member mean and then **settled** | `ModernHopfieldNetwork.superpose(members)` — the normalised sum, explicitly *not* settled |
+| `torch.topk(patterns @ state, k)` inline | `ModernHopfieldNetwork.decode(state, k)` — the store's own `logits()` path |
+| — | `WhiteningConfig` (opt-in, `enabled=False`) + `WhitenedEmbedder`, fitted in `OrganizationalMemory.bootstrap` |
+
+`step` and `retrieve` now carry the V.3 table in their docstrings and say
+plainly that they collapse mixtures and must never be used to hold one. That
+mistake was made in every experiment before Part V and is the single thing most
+likely to be repeated.
+
+## VI.2 Part V reproduces through the library
+
+Same 788 LoCoMo turns, 200 trials, `superpose` + `decode`:
+
+| k | as shipped | whitened | whitened, settled b=128 | whitened, settled b=2 |
+|---|---|---|---|---|
+| 2 | 0.950 | **1.000** | 0.625 | 0.005 |
+| 4 | 0.190 | **1.000** | 0.258 | 0.009 |
+| 8 | 0.056 | **0.999** | 0.151 | 0.012 |
+| 16 | 0.049 | **0.974** | 0.109 | 0.023 |
+| 32 | 0.059 | **0.887** | 0.115 | 0.043 |
+| 64 | 0.092 | **0.769** | 0.141 | 0.079 |
+
+Anisotropy: **+0.649** as shipped, **−0.001** whitened — identical to V.2. The
+capacity numbers match V.2/V.3 to within trial noise (the k=2 unwhitened cell
+moves 0.915 → 0.950 across seeds; nothing else moves by more than 0.006).
+
+## VI.3 A correction to V.5: half the ranking loss was the refit
+
+V.5 reported that whitening costs retrieval depth. Re-measured with the fitted
+`Whitener` instead of the prototype's per-call refit, same 3 conversations,
+n=494:
+
+| | hit@1 | hit@5 | hit@10 |
+|---|---|---|---|
+| BGE as shipped | 0.269 | 0.543 | 0.676 |
+| whitened, **fitted once** on 1451 turns | 0.302 | 0.536 | 0.628 |
+| whitened, refit per conversation (= V.5) | 0.304 | 0.492 | 0.551 |
+
+The as-shipped row reproduces V.5 exactly, so the harness is the same. The
+difference is the fit: `dense_knn_ranker` encodes one conversation at a time, so
+the prototype was refitting on 369–663 turns in 384 dimensions — a rank-deficient
+covariance. **Roughly half the published depth loss was that artifact.** The
+direction of V.5 survives: hit@1 +0.033 (inside the ~0.04 resolution limit, i.e.
+a tie) and hit@10 −0.048, still a real loss. Whiten for the substrate, not for
+the ranker — but the honest price is 0.628, not 0.551.
+
+Fitted on all 10 conversations (n=1977) the same comparison is 0.252/0.502/0.615
+as shipped against 0.274/0.509/0.610 whitened, i.e. the loss shrinks further as
+the fit corpus grows. That is the expected behaviour of a covariance estimate
+and it is why `Whitener.fit` warns when it is given fewer rows than dimensions.
+
+## VI.4 Tests
+
+`tests/test_superposition.py`, 20 tests, on real BGE embeddings of LoCoMo turns
+(synthetic Gaussians are isotropic by construction and would make the anisotropy
+test vacuous — HANDOFF §5). Each asserts *both ends* of a gap, and the suite was
+checked by mutation rather than by inspection:
+
+| mutation | tests killed |
+|---|---|
+| `Whitener.transform` returns the input unwhitened | 8 |
+| `superpose` settles the sum before returning it | 7 |
+| `decode` ranks the settled state instead of the held one | 6 |
+| the `state_dict` overrides removed | 2 |
+
+Full suite: **151 passing** (131 before). Whitening is off by default, so every
+number in Parts I–V was re-measured unchanged.

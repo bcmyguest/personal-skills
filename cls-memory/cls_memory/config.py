@@ -127,6 +127,60 @@ class KeyConfig:
 
 
 @dataclass
+class WhiteningConfig:
+    """Isotropic re-coding of the embedding space (cls_memory.whitening).
+
+    Off by default, and the default is not a hedge -- whitening helps one thing
+    and hurts another, measured on the same vectors:
+
+      **Substrate (superposition).** A sum of k unit vectors keeps each
+      component at cosine ~1/sqrt(k) only if the components are near-orthogonal.
+      BGE-small vectors for unrelated LoCoMo turns sit at mean pairwise cosine
+      +0.649; whitened, -0.001. Per-item recall of k memories held in ONE 384-d
+      vector, decoded against 788 stored memories, goes from 0.185 to 1.000 at
+      k=4 and from 0.062 to 0.999 at k=8 (RESULTS.md V.2). Without whitening
+      superposition does not work at all beyond k=2.
+
+      **Ranker (kNN retrieval).** The same transform on LoCoMo turn retrieval,
+      n=494 questions over 1451 turns:
+
+          BGE as shipped            @1 0.269   @5 0.543   @10 0.676
+          whitened, fitted once     @1 0.302   @5 0.536   @10 0.628
+          whitened, refit per conv  @1 0.304   @5 0.492   @10 0.551
+
+      The hit@1 gain is +0.033, at this project's ~0.04 resolution limit, so
+      read it as a tie. The depth loss is real and it is what this setting costs
+      you. The third row is the prototype's refit-per-corpus behaviour and is
+      the number RESULTS.md V.5 published: refitting on 369-663 turns in 384
+      dimensions is rank-deficient, and roughly half the measured depth loss was
+      that artifact rather than whitening. A `Whitener` fitted once on the whole
+      corpus is both the correct usage and the cheaper trade (RESULTS.md V.6).
+
+    Anisotropy makes everything mildly similar, which flatters fuzzy top-10
+    recall and destroys the component structure superposition needs. The two
+    uses want opposite geometries. **Whiten for the substrate, not the ranker.**
+
+    Enabling this changes every number in RESULTS.md Parts I-IV, which were all
+    measured with it off; that is why it is opt-in rather than a new default.
+    Fitting needs a corpus, so it happens in `OrganizationalMemory.bootstrap`.
+    """
+
+    enabled: bool = False
+    """Whiten every embedding the system produces, documents and queries alike.
+    False keeps the geometry every published result here was measured on."""
+    floor: float = 1e-2
+    """Lower bound on a direction's standard deviation before inversion.
+
+    The small singular values are noise directions; dividing by ~0 lets them
+    dominate every cosine. 1e-2 is the value the V.2 capacity table was measured
+    at -- k=8 at 0.999 per-item recall, matching the random-vector ceiling."""
+    normalize: bool = True
+    """Renormalise to the unit sphere after whitening. Required by
+    `HopfieldConfig.normalize_patterns` and by the energy/diffusion
+    correspondence in energy.py."""
+
+
+@dataclass
 class DecayConfig:
     """Temporal forgetting curve for episodic memories."""
 
@@ -248,6 +302,7 @@ class MemorySystemConfig:
     novelty: NoveltyConfig = field(default_factory=NoveltyConfig)
     hopfield: HopfieldConfig = field(default_factory=HopfieldConfig)
     key: KeyConfig = field(default_factory=KeyConfig)
+    whitening: WhiteningConfig = field(default_factory=WhiteningConfig)
     decay: DecayConfig = field(default_factory=DecayConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     consolidation: ConsolidationConfig = field(default_factory=ConsolidationConfig)
@@ -284,3 +339,8 @@ class MemorySystemConfig:
         )
         _check_range("decay.half_life_days", self.decay.half_life_days, 0.0,
                      float("inf"), inclusive=False)
+        # A floor of 0 divides the noise directions by their measured standard
+        # deviation, which for the near-null ones is ~0: the whitened vector
+        # then points wherever the smallest eigenvector happens to point.
+        _check_range("whitening.floor", self.whitening.floor, 0.0, float("inf"),
+                     inclusive=False)

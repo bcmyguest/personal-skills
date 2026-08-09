@@ -28,6 +28,7 @@ from .pattern_separation import KeyEncoder
 from .records import MemoryRecord, Persistence
 from .retrieval import PatternCompleter, RecallResult
 from .store import MemoryStore, SweepReport
+from .whitening import WhitenedEmbedder, Whitener
 
 
 @dataclass
@@ -66,6 +67,16 @@ class OrganizationalMemory:
         if self.embedder.dim != self.config.cortex.input_dim:
             # Keep the cortex honest about its actual input width.
             self.config.cortex.input_dim = self.embedder.dim
+
+        # Opt-in, and off by default: whitening makes superposition work and
+        # costs ranking depth (hit@10 0.676 -> 0.551 on LoCoMo). See
+        # WhiteningConfig. Wrapping here rather than at the call sites is what
+        # guarantees documents and queries get the *same* transform; the
+        # whitener itself is fitted in bootstrap(), where a corpus exists.
+        self.whitener = None
+        if self.config.whitening.enabled:
+            self.whitener = Whitener(self.embedder.dim, self.config.whitening)
+            self.embedder = WhitenedEmbedder(self.embedder, self.whitener)
 
         # nn.Linear initialisation draws from the *global* RNG. fork_rng gives
         # deterministic weights for a given seed while restoring the caller's
@@ -128,6 +139,11 @@ class OrganizationalMemory:
 
         Order matters: calibrating before training would measure surprise
         against an untrained cortex, where everything looks equally novel.
+
+        This is also where a whitener is fitted, when `whitening.enabled` -- it
+        is a covariance estimate over the embedding space, so it needs a corpus,
+        and it must be fitted *before* the cortex trains on those embeddings.
+        The `fit` branch below does both, in that order.
         """
         corpus = list(corpus)
         # A fittable embedder (LSA and friends) is fitted here, on the same

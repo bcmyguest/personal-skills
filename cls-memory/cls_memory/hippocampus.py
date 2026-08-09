@@ -326,8 +326,105 @@ class ModernHopfieldNetwork(torch.nn.Module):
         Identical in form to a transformer attention head with Q=xi, K=V=X,
         and identical to one posterior-mean denoising step of a diffusion model
         over the stored patterns (see cls_memory.energy).
+
+        **This is a cleanup operator. It destroys superpositions, at every
+        beta.** Per-item recall of a k-memory mixture on whitened vectors, the
+        unsettled normalised sum against the settled state (RESULTS.md V.3):
+
+            k    unsettled   b=0.051   b=2     b=8     b=32    b=128
+            4      1.000       0.005   0.005   0.253   0.253   0.253
+            8      1.000       0.011   0.013   0.149   0.149   0.149
+            16     0.974       0.016   0.020   0.109   0.110   0.109
+
+        Low beta pulls the state to the global centroid; high beta snaps it to
+        one attractor. There is no beta in between that holds a mixture. To hold
+        k memories use `superpose` and read them out with `decode`; use `step`
+        and `retrieve` only when collapsing to a single episode is the point.
         """
         return self.attention(xi, beta) @ self.patterns
+
+    # --------------------------------------------------------- superposition
+
+    def superpose(self, members: Tensor | list[int]) -> Tensor:
+        """Hold k memories in ONE d-dimensional vector: the normalised sum.
+
+        Deliberately **not settled**. This is the `hold` operation of the three
+        the store supports, and they are different operations:
+
+            hold      superpose(members)      normalised sum -> one K/V slot
+            decode    decode(state, k)        attention LOGITS -> the members
+            complete  retrieve(cue)           ITERATE the update -> one episode
+
+        Every experiment in this project before RESULTS.md Part V used the
+        settled state for all three, which is exactly the step that throws the
+        superposition away -- see `step` for the numbers.
+
+        Capacity is a property of the code, not of this method: on BGE vectors
+        as shipped (mean pairwise cosine +0.649 between unrelated memories)
+        per-item recall at k=4 is 0.185, and on the same content whitened
+        (`cls_memory.whitening`) it is 1.000, holding 0.999 at k=8 and 0.892 at
+        k=32. Superposing anisotropic embeddings does not work.
+
+        `members` is either row indices into the store (a list of ints or an
+        integer tensor) or a float tensor of raw vectors, (k, d) or (d,). Raw
+        rows are unit-normalised before summing so one long vector cannot
+        dominate the mixture -- a no-op for stored patterns under the default
+        `normalize_patterns=True`.
+        """
+        if isinstance(members, (list, tuple)):
+            members = torch.tensor(members, dtype=torch.long)
+        if not isinstance(members, Tensor):
+            raise TypeError(f"expected indices or vectors, got {type(members)!r}")
+        if members.is_floating_point():
+            rows = members.detach().to(self.patterns.dtype)
+            if rows.dim() == 1:
+                rows = rows.unsqueeze(0)
+            if rows.shape[-1] != self.dim:
+                raise ValueError(
+                    f"expected vectors of dim {self.dim}, got {rows.shape[-1]}"
+                )
+        else:
+            index = members.reshape(-1).to(torch.long)
+            if index.numel() and (
+                int(index.min()) < 0 or int(index.max()) >= len(self)
+            ):
+                raise IndexError(
+                    f"member index out of range for {len(self)} stored patterns"
+                )
+            rows = self.patterns[index]
+        if rows.shape[0] == 0:
+            raise ValueError("cannot superpose an empty set of memories")
+        state = _normalize(rows).sum(dim=0)
+        norm = float(state.norm())
+        if norm < 1e-8:
+            raise ValueError(
+                "the members cancel out: their normalised sum has ~zero norm, so "
+                "there is no mixture to hold (are they antipodal?)"
+            )
+        return state / norm
+
+    def decode(self, state: Tensor, k: int, beta: float | None = None) -> Tensor:
+        """Read the k strongest members out of a superposed state, by LOGITS.
+
+        Returns row indices, highest first. This is `logits()` -- the same
+        `beta*(X xi - ||x||^2/2) + log w` the attention head computes before its
+        softmax -- so decoding is the Hopfield machinery's own arithmetic, just
+        stopped one step earlier. For unit-norm patterns under a uniform prior
+        the ranking is identical to cosine against the store; salience and
+        non-unit norms shift it, which is the intended behaviour (a decayed
+        memory should be harder to read out).
+
+        Never decode from `step`/`retrieve` output. The settled state is one
+        attractor, so at k=8 it recovers 0.149 of the members where this
+        recovers 0.999 (RESULTS.md V.3).
+        """
+        if self.is_empty:
+            raise RuntimeError("cannot decode against an empty hippocampus")
+        if state.dim() != 1:
+            raise ValueError(f"expected a single state (d,), got {tuple(state.shape)}")
+        if not 1 <= k <= len(self):
+            raise ValueError(f"k must be in [1, {len(self)}], got {k}")
+        return torch.topk(self.logits(state, beta), k).indices
 
     def energy(self, xi: Tensor, beta: float | None = None) -> Tensor:
         """E(xi) from the module docstring. Lower = deeper basin."""
@@ -403,6 +500,12 @@ class ModernHopfieldNetwork(torch.nn.Module):
         With `mask=None` the whole (noisy) cue is free to move, which is the
         right behaviour for a text query: the query embedding is itself a
         corrupted version of the pattern, not a subset of its coordinates.
+
+        This is the `complete` operation: it collapses whatever it is given to a
+        single episode, which is why it must **never** be used to hold or read a
+        superposition. Settling a mixture of 8 memories leaves 0.149 of them
+        recoverable against 0.999 for the unsettled sum, and no beta avoids it
+        (RESULTS.md V.3). Use `superpose` to hold and `decode` to read.
         """
         if self.is_empty:
             raise RuntimeError("cannot retrieve from an empty hippocampus")

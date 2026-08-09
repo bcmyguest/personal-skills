@@ -19,6 +19,7 @@ from .config import (
     KeyConfig,
     MemorySystemConfig,
     NoveltyConfig,
+    WhiteningConfig,
 )
 from .consolidation import ConsolidationEngine, ConsolidationReport
 from .embeddings import (
@@ -45,6 +46,7 @@ from .records import MemoryRecord, Persistence
 from .retrieval import PatternCompleter, RecallResult, Recollection
 from .store import MemoryStore, SweepReport
 from .system import OrganizationalMemory
+from .whitening import WhitenedEmbedder, Whitener, anisotropy
 
 __version__ = "0.1.0"
 
@@ -82,7 +84,11 @@ __all__ = [
     "SlowLearningNeocortex",
     "SweepReport",
     "SynapticIngestionPipeline",
+    "WhitenedEmbedder",
+    "Whitener",
+    "WhiteningConfig",
     "__version__",
+    "anisotropy",
     "basin_depth",
     "beta_to_sigma",
     "denoise",
