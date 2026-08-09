@@ -861,3 +861,10 @@ checked by mutation rather than by inspection:
 
 Full suite: **151 passing** (131 before). Whitening is off by default, so every
 number in Parts I–V was re-measured unchanged.
+
+---
+
+Part VII — the end-to-end K/V demo this table records as blocked, run against a
+real decoder LM now that HuggingFace is reachable — is in
+[`RESULTS-PART-VII.md`](RESULTS-PART-VII.md). It confirms the zero-context-token
+claim exactly and retracts V.4's compression ratio.
