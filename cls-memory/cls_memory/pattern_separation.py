@@ -41,8 +41,9 @@ class HippocampalKey(str, Enum):
     """Which vector the Hopfield network actually stores."""
 
     SEPARATED = "separated"
-    """DG-style sparse expansion of the embedding. Default: best measured
-    recall plus an explicit separation/capacity knob."""
+    """DG-style sparse expansion of the embedding. Not the default; matches
+    EMBEDDING on measured recall but adds an explicit separation/capacity
+    knob, which is the term the capacity results multiply by beta."""
 
     EMBEDDING = "embedding"
     """The raw encoder embedding. Matches SEPARATED on recall here; keeps the

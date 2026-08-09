@@ -27,7 +27,7 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-131 tests pass. `examples/demo.py` runs the full lifecycle end to end.
+151 tests pass. `examples/demo.py` runs the full lifecycle end to end.
 `experiments/benchmark.py` evaluates on a labelled synthetic corpus and
 `experiments/benchmark_locomo.py` on **real conversational data with
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
@@ -43,7 +43,7 @@ the fixes are in §11.
 
 ```bash
 uv venv && uv pip install torch pytest
-uv run pytest                       # 131 passed
+uv run pytest                       # 151 passed
 PYTHONPATH=. uv run python examples/demo.py
 ```
 
@@ -152,8 +152,10 @@ k-winner-take-all. Measured on 5 incidents / 5 partial-cue queries:
 | **DG-separated, k=256** | **5/5** | 0.405 |
 | DG-separated, k=16 | 4/5 | 0.059 |
 
-The default is `HippocampalKey.SEPARATED`. Set `KeyConfig(mode=LATENT)` for the
-original design — it remains selectable and tested. Note the sparsity trade-off:
+The default is `HippocampalKey.EMBEDDING`: it matches SEPARATED on recall here
+and avoids the extra projection. Set `KeyConfig(mode=SEPARATED)` for the
+explicit separation knob, or `mode=LATENT` for the original design — both
+remain selectable and tested. Note the sparsity trade-off:
 lower k decorrelates far more but leaves too few active units shared with a
 degraded query, so recall drops.
 
