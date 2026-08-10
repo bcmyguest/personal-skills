@@ -847,11 +847,21 @@ already defaults to `EMBEDDING`).
 - **DG off is now justified by measurement rather than by the earlier
   recall-only comparison.** It does not merely fail to help; it moves the
   quantity it is named for in the wrong direction, on two unrelated corpora.
-- **Whitening is not promoted despite winning its one powered test**, because
-  this project's standing rule is that a change must hold on both corpora and
-  QMSum's 53 questions cannot support it. Flipping this default needs a
-  powered QMSum run (25 meetings, 170 q) showing the same direction. That run
-  costs hours per row and has not been made.
+- **Whitening is not promoted despite winning its one powered test.** This
+  project's standing rule is that a change must hold on both corpora, and
+  QMSum's 53-question slice could not support it. **That powered QMSum run has
+  since been made** (25 meetings, 170 q — VI.6) and it does **not** show the
+  same direction: QMSum hit@1 is **flat, 0.335 → 0.335**, against LoCoMo's
+  +0.036. A delta of exactly zero needs no significance test to fail to
+  replicate. hit@5 does move the same way (0.541 → 0.571) and hit@10 slips
+  slightly on both corpora, so the picture is "helps the top of one corpus'
+  ranking, does nothing at rank 1 on the other".
+
+  **This is the both-corpora rule doing its job.** A change that improved
+  LoCoMo hit@1 with p=0.0001 and survived correction still does not become a
+  default, because it buys nothing at rank 1 on an unrelated corpus. Whitening
+  remains a per-deployment choice, justified by measurement on the deployment's
+  own corpus — which is also what V.2a concluded about fitting the whitener.
 
 ### Do the earlier retrieval conclusions survive?
 
@@ -1248,71 +1258,22 @@ structurally expected result: RP-4096-bm25 is a Johnson–Lindenstrauss
 approximation of the same BM25-weighted cosine `TfidfIndex`/`BM25Index`
 compute exactly, so it cannot systematically beat what it approximates.
 
-## VI.6 Separation mechanisms wired into the retrieval harness (ticket 07)
+## VI.6 The powered QMSum run IV.4 flags as not yet made
 
-Prefactoring, not a result: `experiments/recall_check.py` previously had no
-way to express whitening at all, and swept pattern separation only as one
-fixed point buried in its cumulative history, not as an independent axis. It
-now takes `whiten` and `key_mode` as ordinary keyword arguments to
-`evaluate()`, runs on both corpora, and reports `anisotropy()`
-(`cls_memory.whitening.anisotropy`, 0.0 = isotropic) over the embeddings and
-hippocampal keys **each row actually wrote to the store** — the measured
-quantity, not the requested configuration. This section only reports what the
-harness now measures; it draws no conclusions from it (that is ticket 08).
+IV.3/IV.4 cover ticket 07's deliverable (whitening and `key_mode` as
+independent sweep axes on `experiments/recall_check.py`, measured
+`aniso_emb`/`aniso_key` per row) and the HANDOFF §2 correction to the stale
+baseline; neither is repeated here. `tests/test_recall_check.py` adds a
+synthetic-data regression guard for the two axes, independent of the real-data
+numbers below. This section supplies one specific thing IV.4 names as missing:
 
-**Baseline reproduction.** The four original cumulative rows were re-run
-unmodified (`git show HEAD:experiments/recall_check.py`, copied out and run
-standalone) and against the refactored harness, same default sizes
-(`--locomo 3 --qmsum 25`, i.e. 1451 + 14431 turns). Every hit@k value matches
-exactly:
+> "Whitening is not promoted despite winning its one powered test, because
+> this project's standing rule is that a change must hold on both corpora and
+> QMSum's 53 questions cannot support it. Flipping this default needs a
+> powered QMSum run (25 meetings, 170 q) showing the same direction. That run
+> costs hours per row and has not been made." (IV.4, "Defaults: unchanged")
 
-**LoCoMo** (494 questions)
-
-| configuration | unmodified script | refactored harness |
-|---|---|---|
-| was: LSA-256, separated, β=8 | 0.002 / 0.010 / 0.026 | 0.002 / 0.010 / 0.026 |
-| + β=128 | 0.221 / 0.281 / 0.354 | 0.221 / 0.281 / 0.354 |
-| + key=embedding | 0.217 / 0.289 / 0.340 | 0.217 / 0.289 / 0.340 |
-| now: + LSA-1024 | 0.306 / 0.358 / 0.383 | 0.306 / 0.358 / 0.383 |
-
-**QMSum** (170 questions, 25 meetings)
-
-| configuration | unmodified script | refactored harness |
-|---|---|---|
-| was: LSA-256, separated, β=8 | 0.047 / 0.229 / 0.376 | 0.047 / 0.229 / 0.376 |
-| + β=128 | 0.194 / 0.394 / 0.547 | 0.194 / 0.394 / 0.547 |
-| + key=embedding | 0.229 / 0.412 / 0.559 | 0.229 / 0.412 / 0.559 |
-| now: + LSA-1024 | 0.335 / 0.541 / 0.682 | 0.335 / 0.541 / 0.682 |
-
-**A correction this surfaced, not caused by the refactor.** These reproduced
-numbers (LoCoMo 0.306, QMSum 0.335 at "now") do not match the 0.250-0.251 /
-0.395 figures Part III and HANDOFF.md §2 quote for the same "current
-defaults" row. The *unmodified* script reproduces 0.306 / 0.335 too, so the
-drift predates this ticket: `LatentSemanticEmbedder`'s defaults changed
-(`max_features` uncapped from 20,000 to 100,000, `min_df` from 2 to 1 — see
-`cls_memory/embeddings.py` and the 3.1d correction in HANDOFF.md) after Part
-III's numbers were published, and the LoCoMo table there was never re-run
-against the new defaults. QMSum's slice also widened from 6 to 25 meetings
-since HANDOFF.md §2 was written. Per this project's rule, that documentation
-is now stale and flagged here rather than silently republished around; fixing
-it is not this ticket's scope, and the *harness* it is generated from is
-verified byte-for-byte unaffected by this refactor.
-
-**The new axes, and the separation actually achieved.** Two further rows per
-corpus, added at the current best operating point (dim=1024, key=embedding,
-β=128) rather than folded into the cumulative history above, so they don't
-disturb it:
-
-**LoCoMo**
-
-| configuration | hit@1 | hit@5 | hit@10 | aniso_emb | aniso_key |
-|---|---|---|---|---|---|
-| now: + LSA-1024 (baseline) | 0.306 | 0.358 | 0.383 | 0.041 | 0.041 |
-| + whitened | 0.342 | 0.356 | 0.364 | -0.001 | -0.001 |
-| + key=separated | 0.291 | 0.356 | 0.399 | 0.041 | 0.134 |
-| + key=separated, whitened | 0.322 | 0.348 | 0.352 | -0.001 | 0.117 |
-
-**QMSum**
+That run, at the harness's real default size:
 
 | configuration | hit@1 | hit@5 | hit@10 | aniso_emb | aniso_key |
 |---|---|---|---|---|---|
@@ -1321,29 +1282,16 @@ disturb it:
 | + key=separated | 0.294 | 0.535 | 0.659 | 0.056 | 0.143 |
 | + key=separated, whitened | 0.329 | 0.524 | 0.647 | 0.000 | 0.118 |
 
-Internal checks that confirm the harness is measuring what it claims, not
-just labelling rows:
-
-- `aniso_emb` depends only on `whiten`, not `key_mode` — the "+ key=separated"
-  row's `aniso_emb` (0.041 / 0.056) matches the unwhitened baseline exactly,
-  because pattern separation projects the *key*, not the stored embedding.
-- `aniso_key` equals `aniso_emb` whenever `key_mode=EMBEDDING` (the key *is*
-  the embedding there), and diverges only under `key_mode=SEPARATED`
-  (0.134/0.143 unwhitened, 0.117/0.118 whitened) — the DG expansion measurably
-  decorrelates the stored keys in both cases.
-- Note these anisotropy values are measured on `LatentSemanticEmbedder`
-  (LSA) vectors, not BGE. They should not be compared to the BGE reference
-  points in `cls_memory/whitening.py` (+0.649 shipped, -0.001 whitened) --
-  LSA's unwhitened anisotropy here (0.041-0.083) is already far lower than
-  BGE's, and whitening still drives it to ~0.000 in every row, confirming the
-  mechanism is genuinely being fitted and applied rather than silently
-  passed through (the exact failure mode `WhitenedEmbedder` warns about when
-  it is enabled but never bootstrapped).
-
-No conclusion is drawn here about whether whitening or separation *helps*
-retrieval on either corpus -- several of the deltas above (e.g. LoCoMo
-hit@1 0.306 -> 0.342 whitened) are within or close to this project's ~0.04
-resolution limit, and interpreting them is ticket 08's job, not this one's.
+It does not show the same direction at hit@1: whitening moves LoCoMo hit@1
++0.036 (0.306 → 0.342, IV.4's one significant result) but QMSum hit@1 here is
+**flat** (0.335 → 0.335) at 170 questions, not the +0.019 IV.3's 53-question
+slice suggested. hit@5 does move the same way as LoCoMo's direction (0.541 →
+0.571) and hit@10 drops slightly, as on LoCoMo (0.682 → 0.671). DG
+`key=separated` replicates its LoCoMo de-separation exactly in kind (`aniso_key`
+0.056 → 0.143 here, 0.041 → 0.134 on LoCoMo) and again helps nothing.
+No significance test is run on this table -- that instrument, and the call on
+what it means for the standing "both corpora" rule, is ticket 08's, not this
+one's. This section only supplies the measurement IV.4 said was missing.
 
 Reproduce with:
 
