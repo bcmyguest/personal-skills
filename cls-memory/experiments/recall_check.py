@@ -7,7 +7,15 @@ corpora — LoCoMo (two-person personal dialogue) and QMSum (many-speaker
 organisational meetings). A change that helps one and hurts the other is
 overfitting to a corpus, and the point of running both is to catch that.
 
-Rows are cumulative, so each line isolates one decision.
+Rows are cumulative, so each line isolates one decision. Two further axes --
+`whiten` and `key_mode` -- are swept independently of that cumulative history
+(ticket 07): they are ordinary keyword arguments to `evaluate`, not baked into
+the label sequence, so any row can turn either on without disturbing the rows
+above it. `evaluate` reports the separation *actually achieved* alongside
+hit@k -- `anisotropy()` over the embeddings and hippocampal keys that row
+really stored, not the configuration that was requested. A system that enables
+whitening and never fits it would show up here as an unwhitened row, because
+the number is measured, not assumed.
 """
 
 from __future__ import annotations
@@ -16,6 +24,7 @@ import argparse
 import time
 
 import torch
+from torch import Tensor
 
 from cls_memory import (
     CortexConfig,
@@ -29,18 +38,39 @@ from cls_memory import (
     OrganizationalMemory,
     Persistence,
 )
+from cls_memory.whitening import WhitenedEmbedder, anisotropy
 from experiments import locomo, qmsum
 
 SEED = 0
 KS = (1, 5, 10)
 
 
-def evaluate(conversations, *, dim: int, key_mode: HippocampalKey, beta: float) -> dict:
+def evaluate(
+    conversations,
+    *,
+    dim: int,
+    key_mode: HippocampalKey,
+    beta: float,
+    whiten: bool = False,
+) -> dict:
     corpus = [t.memory_text for c in conversations for t in c.turns]
-    embedder = LatentSemanticEmbedder(dim=dim, seed=SEED).fit(corpus)
+    raw_embedder = LatentSemanticEmbedder(dim=dim, seed=SEED).fit(corpus)
+    if whiten:
+        # Fitted ONCE on the full multi-conversation corpus, then shared
+        # across every per-conversation system below -- exactly how the raw
+        # LSA embedder is already shared. Fitting per-conversation instead
+        # (a few hundred turns in `dim` dimensions) is rank-deficient and was
+        # the exact mistake that inflated the whitening loss in RESULTS.md
+        # V.5; see WhiteningConfig and cls_memory.whitening.
+        embedder = WhitenedEmbedder(raw_embedder)
+        embedder.fit(corpus)
+    else:
+        embedder = raw_embedder
 
     hits = {k: 0 for k in KS}
     asked = 0
+    embeddings_seen: list[Tensor] = []
+    keys_seen: list[Tensor] = []
     for conv in conversations:
         system = OrganizationalMemory(
             MemorySystemConfig(
@@ -58,6 +88,13 @@ def evaluate(conversations, *, dim: int, key_mode: HippocampalKey, beta: float) 
                 key=KeyConfig(mode=key_mode, expansion_dim=2048, sparsity_k=256),
                 seed=SEED,
             ),
+            # `whitening.enabled` is deliberately left at its default (False):
+            # this harness fits (and, when `whiten`, whitens) the embedder
+            # itself, once, outside the per-conversation loop, and hands the
+            # already-fitted object in -- exactly as it already does for the
+            # plain LSA embedder. Setting `whitening.enabled=True` here too
+            # would make `OrganizationalMemory.__init__` wrap it a *second*
+            # time in a fresh, unfitted `WhitenedEmbedder`.
             embedder=embedder,
         )
         system.cortex.fit(
@@ -70,17 +107,20 @@ def evaluate(conversations, *, dim: int, key_mode: HippocampalKey, beta: float) 
             if float(embedding.norm()) < 1e-8:
                 continue  # degenerate text; the store now rejects these
             latent = system.cortex.latent(embedding)
+            key = system.key_encoder(embedding, latent)
             record = MemoryRecord(
                 text=turn.memory_text,
                 embedding=embedding,
                 latent=latent,
-                key=system.key_encoder(embedding, latent),
+                key=key,
                 persistence=Persistence.TEMPORAL,
                 created_at=turn.timestamp,
                 last_reinforced_at=turn.timestamp,
             )
             system.store.add(record, now=turn.timestamp)
             dia_of[record.id] = turn.dia_id
+            embeddings_seen.append(embedding.detach())
+            keys_seen.append(key.detach())
 
         now = max(t.timestamp for t in conv.turns)
         present = set(dia_of.values())
@@ -99,6 +139,12 @@ def evaluate(conversations, *, dim: int, key_mode: HippocampalKey, beta: float) 
 
     out = {k: hits[k] / max(asked, 1) for k in KS}
     out["asked"] = asked
+    # The measured quantity, not the requested one: anisotropy over the
+    # embeddings and hippocampal keys this row actually wrote to the store,
+    # not over "whiten" or "key_mode" as booleans. 0.0 is isotropic (see
+    # cls_memory.whitening.anisotropy for reference points).
+    out["aniso_emb"] = anisotropy(torch.stack(embeddings_seen))
+    out["aniso_key"] = anisotropy(torch.stack(keys_seen))
     return out
 
 
@@ -117,21 +163,33 @@ def main() -> None:
         print(f"{name}: {len(convs)} conversations, "
               f"{sum(len(c.turns) for c in convs)} turns")
 
+    # (label, dim, key_mode, beta, whiten). The first four rows are the
+    # original cumulative history and MUST reproduce the published numbers
+    # unchanged (RESULTS.md Part III / HANDOFF.md §2) -- if a refactor moves
+    # one of them, that is a bug in the refactor, not a new finding. The rows
+    # below them exercise the two new axes (ticket 07) at the current best
+    # operating point; they are new sweep points, not part of that history,
+    # and are not interpreted here -- that is ticket 08's job.
     configs = [
-        ("was:  LSA-256, separated, beta=8", 256, HippocampalKey.SEPARATED, 8.0),
-        ("  +  beta=128", 256, HippocampalKey.SEPARATED, 128.0),
-        ("  +  key=embedding", 256, HippocampalKey.EMBEDDING, 128.0),
-        ("now:  +  LSA-1024", 1024, HippocampalKey.EMBEDDING, 128.0),
+        ("was:  LSA-256, separated, beta=8", 256, HippocampalKey.SEPARATED, 8.0, False),
+        ("  +  beta=128", 256, HippocampalKey.SEPARATED, 128.0, False),
+        ("  +  key=embedding", 256, HippocampalKey.EMBEDDING, 128.0, False),
+        ("now:  +  LSA-1024", 1024, HippocampalKey.EMBEDDING, 128.0, False),
+        ("  +  whitened", 1024, HippocampalKey.EMBEDDING, 128.0, True),
+        ("  +  key=separated", 1024, HippocampalKey.SEPARATED, 128.0, False),
+        ("  +  key=separated, whitened", 1024, HippocampalKey.SEPARATED, 128.0, True),
     ]
 
     for name, convs in datasets:
         print(f"\n{'=' * 78}\n{name}\n{'=' * 78}")
-        print(f"  {'configuration':<36} " + "  ".join(f"@{k}" .rjust(7) for k in KS))
-        print("  " + "-" * 74)
-        for label, dim, key_mode, beta in configs:
+        print(f"  {'configuration':<32} " + "  ".join(f"@{k}".rjust(7) for k in KS)
+              + "   aniso_emb  aniso_key")
+        print("  " + "-" * 88)
+        for label, dim, key_mode, beta, whiten in configs:
             t0 = time.time()
-            r = evaluate(convs, dim=dim, key_mode=key_mode, beta=beta)
-            print(f"  {label:<36} " + "  ".join(f"{r[k]:7.3f}" for k in KS)
+            r = evaluate(convs, dim=dim, key_mode=key_mode, beta=beta, whiten=whiten)
+            print(f"  {label:<32} " + "  ".join(f"{r[k]:7.3f}" for k in KS)
+                  + f"   {r['aniso_emb']:9.3f}  {r['aniso_key']:9.3f}"
                   + f"   ({r['asked']} q, {time.time() - t0:.0f}s)")
 
 

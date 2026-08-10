@@ -18,6 +18,8 @@ reason -- a good number on its own does not show the transform did anything.
 from __future__ import annotations
 
 import math
+import os
+import warnings
 
 import pytest
 import torch
@@ -39,25 +41,51 @@ pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 
 # ---------------------------------------------------------------- fixtures
 
+# These tests are what actually run RESULTS.md Part V's real-embedding claims.
+# `pytest.importorskip`/`pytest.skip` would let the suite exit green while
+# quietly not exercising those claims -- see issue 01. Default to a hard
+# failure so an incomplete environment is *visibly* different from a complete
+# one (red suite, nonzero exit code), not just a shorter one you'd have to
+# read the skip list to notice. Set this env var to explicitly acknowledge
+# running without the real-embedding runtime (e.g. an unrelated quick dev
+# loop) and fall back to the old skip behaviour.
+_ALLOW_MISSING_EMBEDDINGS_ENV = "CLS_MEMORY_ALLOW_MISSING_EMBEDDINGS"
+
+
+def _require_real_embeddings(reason: str) -> None:
+    """Fail loudly unless the caller has explicitly opted into skipping."""
+    if os.environ.get(_ALLOW_MISSING_EMBEDDINGS_ENV):
+        pytest.skip(f"{reason} (explicitly allowed via {_ALLOW_MISSING_EMBEDDINGS_ENV}=1)")
+    pytest.fail(
+        f"{reason}. This test backs a claim in RESULTS.md Part V and must not "
+        f"silently skip. Install the real-embedding runtime (see README.md "
+        f"'Status'/HANDOFF.md '0. Orientation': `uv sync --extra test-embeddings`) "
+        f"or set {_ALLOW_MISSING_EMBEDDINGS_ENV}=1 to explicitly run without it.",
+        pytrace=False,
+    )
+
 
 @pytest.fixture(scope="module")
 def bge_turns() -> torch.Tensor:
     """788 real LoCoMo turns through BGE-small-v1.5 (~20s, encoded once)."""
-    pytest.importorskip("onnxruntime")
-    pytest.importorskip("tokenizers")
+    for module_name in ("onnxruntime", "tokenizers"):
+        try:
+            __import__(module_name)
+        except ImportError as exc:
+            _require_real_embeddings(f"{module_name} is not installed: {exc}")
     try:
         from experiments import locomo
         from experiments.recall_ablation import BGEEmbedder
     except ImportError as exc:  # pragma: no cover - experiments are optional
-        pytest.skip(f"experiments package unavailable: {exc}")
+        _require_real_embeddings(f"experiments package unavailable: {exc}")
     try:
         conversations = locomo.load()[:2]
     except FileNotFoundError as exc:  # pragma: no cover - data not fetched
-        pytest.skip(f"LoCoMo data unavailable: {exc}")
+        _require_real_embeddings(f"LoCoMo data unavailable: {exc}")
     try:
         embedder = BGEEmbedder()
     except Exception as exc:  # pragma: no cover - model weights not present
-        pytest.skip(f"BGE weights unavailable offline: {exc}")
+        _require_real_embeddings(f"BGE weights unavailable offline: {exc}")
     turns = [t.memory_text for c in conversations for t in c.turns]
     x = embedder.encode(turns)
     assert x.shape[0] > 500, "expected the full LoCoMo turn set"
@@ -391,3 +419,215 @@ def test_enabling_whitening_actually_whitens_the_system():
     assert len(system) == 1
     top = system.recall("wombat launched eclipse").top
     assert top is not None and "wombat" in top.record.text
+
+
+# ------------------------------------------------------ WhitenedEmbedder.encode_query
+
+
+class _AsymmetricStub:
+    """A stub embedder whose document and query paths are deliberately
+    distinguishable, the way BGE's query-instruction prefix distinguishes its
+    query path from its document path.
+
+    `encode` and `encode_query` differ only in coordinate 0 (0.0 for
+    documents, 1.0 for queries); everything else is a deterministic function
+    of the text so two calls to the same path are still comparable.
+    """
+
+    dim = 8
+
+    def _base(self, texts: list[str]) -> torch.Tensor:
+        out = torch.zeros(len(texts), self.dim)
+        for i, t in enumerate(texts):
+            out[i, 1] = float((len(t) % 5) + 1)
+            out[i, 2] = float((sum(map(ord, t)) % 7) + 1)
+        return out
+
+    def encode(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        out = self._base(list(texts))
+        out[:, 0] = 0.0
+        return out
+
+    def encode_query(self, texts) -> torch.Tensor:
+        if isinstance(texts, str):
+            texts = [texts]
+        out = self._base(list(texts))
+        out[:, 0] = 1.0
+        return out
+
+
+def test_whitened_embedder_exposes_encode_query():
+    wrapped = WhitenedEmbedder(_AsymmetricStub())
+    assert hasattr(wrapped, "encode_query")
+
+
+def test_whitened_encode_query_is_not_the_document_path():
+    """The regression this exists to catch: `getattr(embedder, "encode_query",
+    embedder.encode)` -- the pattern every call site in `experiments/` uses --
+    must find a *real* query encoder on `WhitenedEmbedder`, not silently fall
+    back to `encode`. If `encode_query` were ever reimplemented as `return
+    self.encode(texts)` (dropping the delegation to the wrapped embedder's own
+    query path), this test fails because the two outputs would be identical.
+    """
+    corpus = [f"document number {i} about widgets" for i in range(16)]
+    wrapped = WhitenedEmbedder(_AsymmetricStub()).fit(corpus)
+    assert wrapped.whitener.is_fitted
+
+    same_text = ["a widget question"]
+    doc_side = wrapped.encode(same_text)
+    query_side = wrapped.encode_query(same_text)
+
+    assert not torch.allclose(doc_side, query_side)
+
+    # And it isn't just "different by construction" -- it must be the SAME
+    # fitted whitener transform applied to the wrapped embedder's own
+    # encode_query output, i.e. documents and queries land in the same space.
+    inner = _AsymmetricStub()
+    expected = wrapped.whitener.transform(inner.encode_query(same_text))
+    assert torch.allclose(query_side, expected, atol=1e-6)
+
+    # The getattr fallback pattern used throughout experiments/recall_ablation.py
+    # must resolve to the real query encoder, not to encode().
+    resolved = getattr(wrapped, "encode_query", wrapped.encode)
+    assert torch.allclose(resolved(same_text), query_side)
+
+
+def test_whitened_encode_query_falls_back_to_encode_when_wrapped_embedder_lacks_it():
+    """A wrapped embedder with no query/document distinction (e.g. HashingEmbedder)
+    must still work: `encode_query` falls back to the wrapped embedder's `encode`,
+    then applies the same whitener transform as the document path."""
+    corpus = [f"incident {i} report" for i in range(16)]
+    wrapped = WhitenedEmbedder(HashingEmbedder(dim=32)).fit(corpus)
+    text = ["a fresh incident"]
+    assert torch.allclose(wrapped.encode(text), wrapped.encode_query(text))
+
+
+def test_whitened_encode_query_passes_through_unfitted_and_warns_once():
+    """Same pass-through + warn-once contract as `encode`, exercised on the
+    query path specifically, since that path used not to exist at all."""
+    wrapped = WhitenedEmbedder(_AsymmetricStub())
+    assert not wrapped.whitener.is_fitted
+
+    inner = _AsymmetricStub()
+    text = ["unfitted query"]
+    with pytest.warns(UserWarning, match="not fitted"):
+        out = wrapped.encode_query(text)
+    assert torch.allclose(out, inner.encode_query(text))
+
+    # warn-once: a second call must not warn again.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        wrapped.encode_query(text)
+
+
+# --------------------------------------- prototype/library equivalence (ticket 06)
+#
+# `experiments/superposition.py` used to carry private copies of the whitening,
+# superposition and decode operations, so RESULTS.md V.5/VI.2/VI.3 claimed to
+# have been re-measured "through the library classes rather than the prototype"
+# while actually running the duplicates. The experiment now calls the library.
+# These tests pin the two implementations together so they cannot silently
+# diverge again -- they assert VALUES, not that a function exists.
+
+
+def _prototype_whiten(x, *, fit_on=None, floor=1e-2):
+    """The exact SVD whitening `experiments/superposition.py` used to define."""
+    basis = x if fit_on is None else fit_on
+    mean = basis.mean(dim=0, keepdim=True)
+    _, s, vh = torch.linalg.svd(basis - mean, full_matrices=False)
+    scale = (s / math.sqrt(basis.shape[0])).clamp_min(floor)
+    out = ((x - mean) @ vh.T / scale) @ vh
+    return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def _corpus(n: int, d: int, seed: int = 0) -> torch.Tensor:
+    g = torch.Generator().manual_seed(seed)
+    # Anisotropic on purpose: a shared offset puts every row in a narrow cone,
+    # which is the regime whitening exists to fix. Isotropic Gaussians would
+    # make the comparison vacuous (HANDOFF §5).
+    x = torch.randn(n, d, generator=g) + 3.0 * torch.randn(1, d, generator=g)
+    return x / x.norm(dim=-1, keepdim=True)
+
+
+def test_library_whitener_matches_the_prototype_transform():
+    """In-sample (transductive) fit: `Whitener` must reproduce the prototype."""
+    x = _corpus(256, 32)
+    library = Whitener(32, WhiteningConfig(floor=1e-2)).fit(x).transform(x)
+    assert torch.allclose(library, _prototype_whiten(x), atol=1e-5)
+
+
+def test_library_whitener_matches_the_prototype_on_a_held_out_fit():
+    """Fit on one corpus, apply to another -- the discipline RESULTS.md V.2's
+    held-out capacity numbers depend on. A whitener that silently refitted on
+    the transformed batch would pass the in-sample test above and fail here."""
+    fit_pool = _corpus(512, 32, seed=1)
+    target = _corpus(128, 32, seed=2)
+    library = Whitener(32, WhiteningConfig(floor=1e-2)).fit(fit_pool).transform(target)
+    assert torch.allclose(library, _prototype_whiten(target, fit_on=fit_pool), atol=1e-5)
+
+
+def test_library_superpose_and_decode_match_the_prototype_cosine_path():
+    """`superpose` + `decode` must rank exactly as the prototype's normalised
+    mean + cosine top-k did. This is the identity V.2's capacity table rests on:
+    for unit-norm patterns under a uniform prior the attention logits order the
+    store identically to cosine, so porting the experiment to the library must
+    not move a single published cell."""
+    patterns = torch.nn.functional.normalize(_corpus(200, 32, seed=3), dim=-1)
+    mhn = ModernHopfieldNetwork(32, HopfieldConfig())
+    mhn.write(patterns)
+
+    g = torch.Generator().manual_seed(7)
+    for k in (2, 4, 8, 16):
+        for _ in range(10):
+            members = torch.randperm(200, generator=g)[:k].tolist()
+
+            state = mhn.superpose(members)
+            prototype_state = patterns[members].mean(dim=0)
+            prototype_state = prototype_state / prototype_state.norm().clamp_min(1e-12)
+            assert torch.allclose(state, prototype_state, atol=1e-6)
+
+            cos = patterns @ prototype_state
+            library_top = mhn.decode(state, k).tolist()
+            prototype_top = torch.topk(cos, k).indices.tolist()
+
+            # Compared by SIMILARITY, not by index. `decode` ranks by
+            # `beta*(X xi - ||x||^2/2) + log w`; with beta=128 that amplifies
+            # float rounding, so two candidates whose cosines differ by ~1e-8
+            # can swap places against a direct matmul. Measured here: indices
+            # 60 and 189 at cosine 0.969203949 vs 0.969204009. Asserting index
+            # equality would make this test fail on an effectively exact tie,
+            # while asserting the selected similarities agree still catches a
+            # real divergence (a genuinely worse memory being selected).
+            assert torch.allclose(
+                cos[library_top].sort(descending=True).values,
+                cos[prototype_top].sort(descending=True).values,
+                atol=1e-6,
+            )
+
+
+def test_prototype_and_library_agree_on_measured_capacity():
+    """End to end: the per-item recall number V.2 publishes is the same whether
+    it is computed through the library or the prototype. Checks the metric, not
+    just the intermediate tensors."""
+    patterns = torch.nn.functional.normalize(_corpus(300, 48, seed=5), dim=-1)
+    mhn = ModernHopfieldNetwork(48, HopfieldConfig())
+    mhn.write(patterns)
+
+    def recall(use_library: bool, k: int, trials: int = 25) -> float:
+        g = torch.Generator().manual_seed(11)
+        hits = 0
+        for _ in range(trials):
+            members = torch.randperm(300, generator=g)[:k].tolist()
+            if use_library:
+                top = mhn.decode(mhn.superpose(members), k).tolist()
+            else:
+                state = patterns[members].mean(dim=0)
+                state = state / state.norm().clamp_min(1e-12)
+                top = torch.topk(patterns @ state, k).indices.tolist()
+            hits += len(set(top) & set(members)) / k
+        return hits / trials
+
+    for k in (4, 8):
+        assert recall(True, k) == pytest.approx(recall(False, k), abs=1e-9)

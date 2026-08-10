@@ -100,9 +100,12 @@ class TfidfIndex:
         # `idf_corpus` exists so this shares an IDF convention with
         # HashedProjection, which fits on the whole corpus. Comparing a
         # per-conversation-IDF exact ranker against a corpus-IDF hashed one
-        # confounded the projection with the fitting scope, and the confound
-        # was worth ~0.008 hit@1 -- about the size of the effect it was used
-        # to claim.
+        # confounded the projection with the fitting scope. This hook existed
+        # but nothing called it until ticket 05 wired `main()`'s ceilings
+        # section through it (RESULTS.md VI.5): measured, moving this class
+        # from per-conversation to whole-corpus IDF shifts LoCoMo hit@1 by
+        # +0.002 (0.320 -> 0.322, 3 conversations, n=494) -- small, but not
+        # nothing next to the ~0.010 gap the RP-4096 retraction turns on.
         self.char_ngrams = char_ngrams
         self.docs = docs
         fit_docs = idf_corpus if idf_corpus is not None else docs
@@ -111,6 +114,8 @@ class TfidfIndex:
             df.update(set(self._terms(doc)))
         self.doc_terms = [Counter(self._terms(d)) for d in docs]
         n = len(fit_docs)
+        self.n_idf_docs = n  # recorded so a run can assert every ceiling row
+        # was fit on the same pool -- see main()'s shared `idf_corpus` guard.
         self.idf = {t: math.log((1 + n) / (1 + c)) + 1.0 for t, c in df.items()}
         self.doc_vecs = [self._weight(t) for t in self.doc_terms]
 
@@ -150,25 +155,38 @@ class TfidfIndex:
 class BM25Index:
     """Okapi BM25 over word unigrams+bigrams -- the standard sparse baseline."""
 
-    def __init__(self, docs: list[str], k1: float = 1.5, b: float = 0.75) -> None:
+    def __init__(
+        self, docs: list[str], k1: float = 1.5, b: float = 0.75,
+        *, idf_corpus: list[str] | None = None,
+    ) -> None:
+        # `idf_corpus` mirrors `TfidfIndex`'s hook (ticket 05): without it, BM25
+        # estimated document frequency from whatever conversation it was
+        # ranking -- a much smaller pool than `HashedProjection`, which fits on
+        # the whole corpus. Comparing a per-conversation-IDF exact ranker
+        # against a corpus-IDF hashed one confounds the "lexical ceiling vs
+        # projection" comparison with the fitting scope, not just the method.
         self.k1, self.b = k1, b
         self.docs = [self._terms(d) for d in docs]
         self.lengths = [len(d) for d in self.docs]
         self.avg_len = sum(self.lengths) / max(len(self.docs), 1)
-        df: Counter = Counter()
-        self.tf = []
-        for doc in self.docs:
-            counts = Counter(doc)
-            self.tf.append(counts)
-            df.update(counts.keys())
-        n = len(self.docs)
-        self.idf = {
-            t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()
-        }
+        self.tf = [Counter(d) for d in self.docs]
         self.postings: dict[str, list[int]] = {}
         for i, counts in enumerate(self.tf):
             for t in counts:
                 self.postings.setdefault(t, []).append(i)
+
+        fit_terms = (
+            [self._terms(d) for d in idf_corpus] if idf_corpus is not None else self.docs
+        )
+        df: Counter = Counter()
+        for doc in fit_terms:
+            df.update(set(doc))
+        n = len(fit_terms)
+        self.n_idf_docs = n  # recorded so a run can assert every ceiling row
+        # was fit on the same pool -- see main()'s shared `idf_corpus` guard.
+        self.idf = {
+            t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()
+        }
 
     @staticmethod
     def _terms(text: str) -> list[str]:
@@ -181,7 +199,11 @@ class BM25Index:
             idf = self.idf.get(term)
             if idf is None:
                 continue
-            for i in self.postings[term]:
+            # A term can be in `idf` (fit on `idf_corpus`) but absent from this
+            # conversation's own postings once the two corpora are allowed to
+            # differ (ticket 05) -- `.get` rather than `[term]`, or a term seen
+            # only elsewhere in the shared corpus raises a KeyError here.
+            for i in self.postings.get(term, ()):
                 f = self.tf[i][term]
                 denom = f + self.k1 * (
                     1 - self.b + self.b * self.lengths[i] / max(self.avg_len, 1e-9)
@@ -238,6 +260,8 @@ class HashedProjection:
             lengths.append(len(terms))
             df.update(set(terms))
         n = len(docs)
+        self.n_idf_docs = n  # recorded so a run can assert every ceiling row
+        # was fit on the same pool -- see main()'s shared `idf_corpus` guard.
         self.avg_len = sum(lengths) / max(n, 1)
         if weighting == "bm25":
             self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
@@ -296,6 +320,27 @@ class HashedProjection:
                 for idx, sign in zip(indices, signs):
                     out[row, idx] += weight * sign * scale
         return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def assert_shared_idf(label: str, index, idf_corpus: list[str]) -> None:
+    """Loud guard against ticket 05's confound: a lexical/hashed ceiling row
+    fit on a different IDF pool than the rest of the ceilings section it is
+    being compared against.
+
+    `TfidfIndex`, `BM25Index` and `HashedProjection` all record `n_idf_docs`
+    -- the size of the corpus their document frequencies were estimated from
+    -- specifically so this can be checked. HANDOFF.md §3.1d item 1's
+    "RP-4096 passes the sparse TF-IDF ceiling" retraction turned on exactly
+    this mismatch (TF-IDF/BM25 fit per-conversation, HashedProjection fit on
+    the whole corpus); this makes a future regression to that state a hard
+    failure instead of a silent one.
+    """
+    if index.n_idf_docs != len(idf_corpus):
+        raise AssertionError(
+            f"{label}: fit on {index.n_idf_docs} docs, expected the shared "
+            f"IDF corpus of {len(idf_corpus)} docs -- ceilings must share "
+            "one IDF convention (ticket 05)."
+        )
 
 
 class SpacyVectorEmbedder:
@@ -651,20 +696,32 @@ def main() -> None:
     print(f"{len(conversations)} conversations, {n_turns} turns\n")
 
     print("RETRIEVAL CEILINGS (no memory system -- plain ranking over turns)")
-    score_ranking(
-        conversations,
-        lambda c: (lambda idx: lambda q: [c.turns[i].dia_id for i in idx.rank(q)])(
-            BM25Index([t.memory_text for t in c.turns])
-        ),
-        "BM25 (sparse, word 1-2 grams)",
-    )
-    score_ranking(
-        conversations,
-        lambda c: (lambda idx: lambda q: [c.turns[i].dia_id for i in idx.rank(q)])(
-            TfidfIndex([t.memory_text for t in c.turns])
-        ),
-        "TF-IDF cosine (sparse, no SVD)",
-    )
+    # Every lexical/hashed ceiling row below is fit against THIS one corpus for
+    # its IDF statistics -- ticket 05. TF-IDF and BM25 still *rank* only the
+    # candidates of the conversation being scored (`c.turns`), but document
+    # frequency comes from the same pool `HashedProjection` fits on. Before this
+    # fix, TF-IDF/BM25 estimated IDF per-conversation while HashedProjection
+    # used the whole corpus -- measured, that moves LoCoMo hit@1 by +0.002 for
+    # TF-IDF and +0.006 for BM25 (RESULTS.md VI.5), which is what the RP-4096
+    # "passes the ceiling" retraction (HANDOFF.md §3.1d item 1) rested on being
+    # confounded with. `assert_shared_idf` makes a future regression to that
+    # mismatch a hard failure instead of a silent one.
+    idf_corpus = corpus
+    print(f"  IDF corpus: shared, {len(idf_corpus)} docs "
+          f"(whole {len(conversations)}-conversation corpus)\n")
+
+    def bm25_ceiling(c):
+        idx = BM25Index([t.memory_text for t in c.turns], idf_corpus=idf_corpus)
+        assert_shared_idf("BM25", idx, idf_corpus)
+        return lambda q: [c.turns[i].dia_id for i in idx.rank(q)]
+
+    def tfidf_ceiling(c):
+        idx = TfidfIndex([t.memory_text for t in c.turns], idf_corpus=idf_corpus)
+        assert_shared_idf("TF-IDF", idx, idf_corpus)
+        return lambda q: [c.turns[i].dia_id for i in idx.rank(q)]
+
+    score_ranking(conversations, bm25_ceiling, "BM25 (sparse, word 1-2 grams)")
+    score_ranking(conversations, tfidf_ceiling, "TF-IDF cosine (sparse, no SVD)")
     hashing = HashingEmbedder(dim=256, seed=SEED)
     score_ranking(conversations, lambda c: dense_knn_ranker(c, hashing),
                   "dense kNN, hashing-256")
@@ -676,11 +733,13 @@ def main() -> None:
     # The hypothesis under test: random projection should beat truncated SVD at
     # equal dim, because SVD discards the tail where the retrieval signal lives.
     for dim in (1024, 2048, 4096):
-        rp = HashedProjection(corpus, dim=dim, seed=SEED)
+        rp = HashedProjection(idf_corpus, dim=dim, seed=SEED)
+        assert_shared_idf(f"random-projection-{dim}", rp, idf_corpus)
         score_ranking(conversations, lambda c, e=rp: dense_knn_ranker(c, e),
                       f"dense kNN, random-projection-{dim}")
     for dim in (1024, 4096):
-        rp = HashedProjection(corpus, dim=dim, weighting="bm25", seed=SEED)
+        rp = HashedProjection(idf_corpus, dim=dim, weighting="bm25", seed=SEED)
+        assert_shared_idf(f"BM25-weighted RP-{dim}", rp, idf_corpus)
         score_ranking(conversations, lambda c, e=rp: dense_knn_ranker(c, e),
                       f"dense kNN, BM25-weighted RP-{dim}")
 

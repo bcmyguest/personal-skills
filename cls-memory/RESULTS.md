@@ -591,15 +591,22 @@ queries. Budget = 256 tokens ≈ 7 rules, counted with the real BGE tokenizer.
 injected? A missing rule makes the model say "I don't know". An obsolete rule
 makes it confidently quote revoked policy, which is worse than empty context.
 
-| arm | coverage@256 | tokens@cover | stale@256 |
-|---|---|---|---|
-| BM25 | 0.92 | 115 | 0.81 |
-| BGE kNN | 0.94 | 76 | 0.88 |
-| BGE + recency rerank | 0.94 | 83 | 0.81 |
-| MHN, no decay | 0.94 | 76 | 0.88 |
-| MHN + recency log-prior | 0.94 | 81 | 0.88 |
-| **INGEST-GATED kNN (t=0.75)** | 0.94 | 115 | **0.00** |
-| ORACLE (current-only kNN) | 1.00 | 58 | 0.00 |
+Re-measured after review ticket 03 corrected two defects in this harness (see
+IV.2a below). `admitted@256` is the number of rules the budget actually let in,
+reported because the prose above claims "a budget holds ~7 rules" and nothing
+was checking it.
+
+| arm | coverage@256 | tokens@cover | stale@256 | trap@256 | admitted@256 |
+|---|---|---|---|---|---|
+| BM25 | 0.92 | 115 | 0.81 | 0.81 | 7.0 |
+| BGE kNN | 0.94 | 76 | 0.88 | 1.00 | 7.0 |
+| BGE + recency rerank | 0.94 | 83 | 0.81 | 1.00 | 7.0 |
+| MHN, no decay | 0.94 | 76 | 0.88 | 1.00 | 7.0 |
+| MHN + recency log-prior | 0.94 | 81 | 0.88 | 1.00 | 7.0 |
+| INGEST-GATED kNN (t=0.80) | 0.94 | 106 | 0.56 | 0.75 | 7.0 |
+| **INGEST-GATED kNN (t=0.75)** | 0.94 | 99 | **0.00** | 0.69 | 7.0 |
+| INGEST-GATED kNN (t=0.70) | 0.91 | 135 | 0.00 | 0.69 | 7.0 |
+| ORACLE (current-only kNN) | 1.00 | 58 | 0.00 | 0.75 | 7.0 |
 
 Three findings:
 
@@ -613,7 +620,58 @@ Three findings:
    rank in the top few: you inject them both either way.
 3. **Write-time gating solves it completely.** Streaming the rules in date
    order and *replacing* a stored rule when a new one lands within cosine 0.75
-   takes `stale@256` from 0.88 to **0.00** — matching the oracle.
+   takes `stale@256` from 0.88 to **0.00** — matching the oracle. This
+   conclusion **survives** the ticket-03 corrections unchanged; what changed is
+   that it is now measured over the same 26-rule candidate set as every other
+   arm, so the gate can be scored against rules it deleted rather than only
+   against the ones it kept.
+
+### IV.2a Corrections to this harness (review ticket 03)
+
+Two defects were fixed. Both were real; only one moved a number, and neither
+overturned a finding — recorded here because "we checked and it held" is a
+result, and because an uncorrected version of this table was quoted as the
+design's one clear win.
+
+**Defect 1 — the budget backfilled.** The injection loop used `continue` when a
+rule did not fit, so it skipped the expensive rule and kept descending the
+ranking, quietly packing cheaper low-ranked rules into the leftover space. That
+is not what a caller assembling a prompt does (it appends until it cannot), and
+it meant the documented "budget admits about seven rules" was never checked.
+Fixed to `break`. **Effect on this corpus: none measurable.** Coverage is
+identical to the last digit for all nine arms, because `rulebook.py`'s rules are
+uniform in length (mean 36 tokens, so the budget almost always fills exactly at
+the boundary). `admitted@256` is now reported and is 7.0 for every arm, which
+confirms the "~7 rules" claim that had been asserted for four sections without
+evidence.
+
+**Defect 2 — the gated arm was scored on its own shrunken store.** `gated_arm`
+returned `knn_arm(live, ...)`, ranking only the rules the gate chose to keep. A
+rule the gate deleted could not appear in the ranking at all, so `stale@256` for
+a gate that deleted every superseded rule was guaranteed 0.00 by construction.
+The gate now expresses its verdict as a **demotion** rather than a deletion: it
+ranks all 26 rules and sorts the ones it would have dropped strictly last.
+
+**What that correction did and did not change.** The staleness column is
+**bit-identical** before and after — 0.81 / 0.88 / 0.56 / 0.00 / 0.00 across the
+arms. So the ticket's premise that the headline 0.00 was *pure* arithmetic is
+too strong: the old metric already discriminated, as the t=0.80 row shows, where
+a gate that leaves one superseded rule in the store scores 0.56 rather than
+0.00. What the old construction genuinely broke was `tokens@cover`. When the
+gate wrongly deleted a *live* rule — and at every threshold it deletes
+`exp.travel.eu`, a scope sibling, not a revision — that rule became
+unreachable, so the cover walk fell through to its full-corpus penalty. Scoring
+over the full candidate set removes that artifact: tokens@cover drops from 119
+to 106 (t=0.80), 115 to 99 (t=0.75) and 169 to 135 (t=0.70). The gate's
+coverage cost is therefore **materially smaller** than this section previously
+reported, though still well above the oracle's 58.
+
+**Honest limit of the corrected metric.** At t=0.75 the 0.00 is still close to
+structural: 18 rules survive the gate, the budget admits 7, so a demoted rule
+cannot reach the context on a corpus this size. The number that carries the
+evidence is the t=0.80 row (0.56), where the metric is demonstrably free to
+report failure and does. `tests/test_rulebook_eval.py` fails if either defect
+returns.
 
 ### Where the gate fails, and what the energy adds (nothing)
 
@@ -689,7 +747,8 @@ A sum of k near-orthogonal unit vectors retains each component at cosine
 | code | mean cosine between *unrelated* memories |
 |---|---|
 | BGE as shipped | **+0.649** |
-| BGE whitened (centre + ZCA) | −0.001 |
+| BGE whitened, **in-sample fit** (n=788, transductive) | −0.001 |
+| BGE whitened, **held-out fit** (n=5094, disjoint conversations) | +0.170 |
 | random unit vectors | +0.000 |
 
 BGE vectors sit in a narrow cone. There is barely any component structure to
@@ -699,21 +758,82 @@ from a different angle — "DG keys for unrelated text sit at cosine ~0.71,
 giving Delta=0.29" — and Delta is precisely the separation term Ramsauer's
 capacity results multiply by beta.
 
+**Review ticket 04 — the original table below was measured in-sample:** the
+whitener was fitted on exactly the 788 vectors it was then scored on, which is
+transductive and flatters the result. Re-measured with the whitener fitted on
+a disjoint pool of 5094 turns from the *other* 8 LoCoMo conversations, then
+applied unchanged to the 788 scored turns:
+
 Per-item recall of k memories superposed into **one 384-d vector**, then
 decoded against 788 stored memories:
 
-| k | BGE as shipped | BGE whitened | random unit (ceiling) |
-|---|---|---|---|
-| 2 | 0.915 | **1.000** | 1.000 |
-| 4 | 0.185 | **1.000** | 1.000 |
-| 8 | 0.062 | **0.999** | 1.000 |
-| 16 | 0.049 | **0.974** | 0.966 |
-| 32 | 0.070 | **0.892** | 0.850 |
-| 64 | 0.102 | **0.774** | 0.709 |
+| k | BGE as shipped | whitened, in-sample fit | whitened, held-out fit | random unit (ceiling) |
+|---|---|---|---|---|
+| 2 | 0.920 | **1.000** | 0.988 | 1.000 |
+| 4 | 0.190 | **1.000** | 0.556 | 1.000 |
+| 8 | 0.064 | **0.999** | 0.221 | 1.000 |
+| 16 | 0.052 | **0.976** | 0.106 | 0.966 |
+| 32 | 0.060 | **0.882** | 0.095 | 0.847 |
+| 64 | 0.098 | **0.766** | 0.122 | 0.703 |
 
-**Whitening recovers the full theoretical capacity** — it matches, and above
-k=16 slightly exceeds, the random-vector ceiling. One vector holds 8 memories
-losslessly, 16 at 97%, 32 at 89%.
+(The as-shipped and in-sample columns reproduce the original table within
+trial/embedding noise, confirming the harness — the in-sample fit is not new,
+only correctly labelled now.)
+
+**The in-sample fit was not a small artifact.** "Whitening recovers the full
+theoretical capacity" is only true of the transductive measurement. Fitted on
+data the scored vectors were never part of, whitening still fixes anisotropy
+partially (+0.649 → +0.170, against a −0.001 in-sample ideal) but per-item
+recall at k=8 falls from 0.999 to 0.221 — barely above the unwhitened 0.064 —
+and the k=4 exact-set rate drops from 1.00 to 0.08. **Whitening genuinely
+helps** (compare the whitened-held-out and as-shipped columns throughout), but
+the "recovers full capacity" and "8 memories losslessly" claims do not survive
+an honest fit.
+
+**Why: domain shift, not sample size.** `experiments/superposition.py`'s
+`fit_size_check` sweeps the size of the disjoint fit pool from 64 to 5094 rows
+(13x the 384-dimension warning threshold) and the residual anisotropy does not
+move: +0.168 at n=64, +0.188 at n=384, +0.167 at n=5094. A second control
+fits on a disjoint *half of the same two conversations* being scored (n=394,
+well under the cross-conversation pool's size) and gets anisotropy **+0.003**
+— matching the in-sample fit, not the cross-conversation held-out one. The gap
+above is which conversations the fit corpus comes from, not how many rows it
+has. `Whitener.fit`'s `n < d` warning is calibrated correctly for what it
+guards — rank-deficient covariance — and the sweep shows genuine instability
+below n=384 (recall@k=8 ranges 0.152–0.215 there vs a tighter 0.19–0.25 band
+above it). But it is not sufficient: a fit corpus can clear n≥d by 13x and
+still leave most of the anisotropy gap unclosed if it is drawn from a
+different distribution than what gets transformed. A deployment should fit the
+whitener on a representative sample of what it will encode, not merely a large
+one; `cls_memory/whitening.py`'s `Whitener.fit` docstring now says so.
+
+Reproduce with `PYTHONPATH=. uv run python experiments/superposition.py`
+(Part 2's anisotropy block, capacity tables, and the `fit-size check` /
+`same-domain control` sections).
+
+### V.2b Now reproducible from the library (ticket 06)
+
+This experiment previously defined **private copies** of the whitening,
+superposition and decode operations, so V.5/VI.2/VI.3's claim to have been
+re-measured "through the library classes rather than the prototype" could not
+be reproduced from the code on the branch. It now calls
+`cls_memory.whitening.Whitener`, `cls_memory.whitening.anisotropy`,
+`ModernHopfieldNetwork.superpose` and `ModernHopfieldNetwork.decode`; no
+duplicate implementations remain.
+
+**Every cell in V.2 above is bit-identical before and after the port.** That is
+the expected result rather than a lucky one: for unit-norm patterns under a
+uniform prior the attention logits order the store exactly as cosine does, so
+swapping the hand-rolled cosine top-k for `decode` cannot move a ranking.
+
+Four tests in `tests/test_superposition.py` pin the implementations together
+(in-sample fit, held-out fit, superpose+decode ranking, and the end-to-end
+recall metric). One found a subtlety worth recording: `decode` ranks by
+`beta*(X xi - ||x||^2/2) + log w`, and at beta=128 that amplifies float
+rounding enough to swap two candidates whose cosines differ by ~1e-8
+(measured: 0.969203949 vs 0.969204009). The tests therefore compare the
+selected *similarities*, not the indices — asserting index equality would fail
+on an exact tie while catching nothing real.
 
 ## V.3 Settling destroys superposition — at every beta
 
@@ -731,6 +851,27 @@ Hopfield update applied:
 No beta preserves a mixture. Low beta pulls the state to the global centroid
 (0.005); high beta snaps it to one attractor (0.15–0.25). **The update is a
 cleanup operator and is antithetical to holding a superposition.**
+
+> **⚠ The table above no longer reproduces, and is not yet re-published.** The
+> current code prints a materially different high-beta half — at k=2:
+> `none` 0.980, b=8 **0.003**, b=32 **0.355**, b=128 **0.573**, against the
+> 1.000 / 0.510 / 0.730 / 0.620 tabulated above. The low-beta columns and the
+> qualitative conclusion (no beta preserves a mixture; the update is a cleanup
+> operator) are unaffected — every settled number remains far below the
+> unsettled `none` column.
+>
+> **The ticket-06 port is not the cause.** The changed figures appear in a run
+> made *before* the port, and the post-port run reproduces them exactly, so
+> the library swap moved nothing here either. The likely cause is an RNG-stream
+> shift: ticket 04 added `fit_size_check` and the same-domain control, both of
+> which draw from the same `generator` before `beta_sweep` runs, so the sweep
+> now samples different member sets. That is the confound `experiments/
+> significance.py` is already documented as suffering from (HANDOFF §4), here
+> reaching a published table. Settling outcomes are bimodal (member vs global
+> centroid), so a reseed can swing a mean hard — but a 0.510 → 0.003 move is
+> larger than that explanation comfortably covers, and it has **not been
+> attributed by measurement**. Do not quote either version of the high-beta
+> columns until `beta_sweep` is given its own independent generator and re-run.
 
 The architectural correction that follows:
 
@@ -845,9 +986,41 @@ as shipped against 0.274/0.509/0.610 whitened, i.e. the loss shrinks further as
 the fit corpus grows. That is the expected behaviour of a covariance estimate
 and it is why `Whitener.fit` warns when it is given fewer rows than dimensions.
 
+### VI.3a Re-checked: `WhitenedEmbedder` had no `encode_query`
+
+Review ticket 02 found that `WhitenedEmbedder` (above) never defined
+`encode_query`, so `dense_knn_ranker`'s `getattr(embedder, "encode_query",
+embedder.encode)` fallback silently used the *document* path for the whitened
+arm's queries, while the "BGE as shipped" row used `BGEEmbedder.encode_query`
+and kept BGE's query instruction prefix — the same asymmetry class that
+already forced one retraction (§3.1d in `HANDOFF.md`). `WhitenedEmbedder` now
+delegates to the wrapped embedder's `encode_query` (falling back to its
+`encode` if it has none) and applies the same fitted whitener transform;
+`tests/test_superposition.py::test_whitened_encode_query_is_not_the_document_path`
+fails if that delegation is ever removed.
+
+Re-measured with `experiments/whitening_query_check.py`, same 3 conversations,
+n=494, "whitened, fitted once" row:
+
+| | hit@1 | hit@5 | hit@10 |
+|---|---|---|---|
+| pre-fix (`encode_query` absent, query used the document path) | 0.300 | 0.534 | 0.632 |
+| post-fix (`encode_query` delegates + whitens) | 0.302 | 0.536 | 0.628 |
+
+The published VI.3 table above (0.302/0.536/0.628) already matches the
+post-fix row exactly, so **the table is confirmed unchanged** — it was, by
+coincidence of the measurement, already run in a way that reproduces the
+post-fix numbers. The fix moves the pre-fix figures by +0.002/+0.002/−0.004,
+far under the ~0.04 resolution limit. Exact paired McNemar between "BGE as
+shipped" and the post-fix whitened row: delta +0.032 hit@1, b01=54, b10=38,
+**p=0.117** — consistent with, and slightly tighter than, the "inside the
+resolution limit" tie already recorded two paragraphs up. No conclusion in
+this section changes.
+
 ## VI.4 Tests
 
-`tests/test_superposition.py`, 20 tests, on real BGE embeddings of LoCoMo turns
+`tests/test_superposition.py`, 24 tests (4 added for VI.3a's `encode_query`
+delegation), on real BGE embeddings of LoCoMo turns
 (synthetic Gaussians are isotropic by construction and would make the anisotropy
 test vacuous — HANDOFF §5). Each asserts *both ends* of a gap, and the suite was
 checked by mutation rather than by inspection:
@@ -859,8 +1032,64 @@ checked by mutation rather than by inspection:
 | `decode` ranks the settled state instead of the held one | 6 |
 | the `state_dict` overrides removed | 2 |
 
-Full suite: **151 passing** (131 before). Whitening is off by default, so every
-number in Parts I–V was re-measured unchanged.
+Full suite: **160 passing, 0 skipped** (151 before this review round; 131
+before Part VI). The 9 added are 4 for VI.3a's `encode_query` delegation and
+5 in `tests/test_rulebook_eval.py` for IV.2a's budget and gating corrections.
+Whitening is off by default, so every number in Parts I–V was re-measured
+unchanged.
+
+## VI.5 Ceilings now share one IDF convention (ticket 05), and the RP-4096 retraction is re-checked
+
+Review ticket 05 found that `recall_ablation.py`'s ceilings section compared
+`TfidfIndex`/`BM25Index` (fit per-conversation) against `HashedProjection`
+(fit on the whole corpus) — two different IDF conventions in the same table.
+That mismatch is what HANDOFF.md §3.1d item 1's retraction of "RP-4096 passes
+the sparse TF-IDF ceiling" rests on. `BM25Index` now takes the same
+`idf_corpus` hook `TfidfIndex` already had, `main()` threads one shared
+`idf_corpus` (the whole loaded corpus) through TF-IDF, BM25 *and*
+`HashedProjection`, prints which corpus was used, and every ceiling row is
+checked with `assert_shared_idf` — a run that ever fits one arm on a different
+pool than the others now raises immediately instead of silently confounding
+the comparison. (Decoupling `BM25Index`'s IDF fit from its ranked-document set
+also surfaced a real bug: `rank()` indexed `self.postings[term]` unconditionally
+and raised `KeyError` for a term present in the shared IDF corpus but absent
+from the conversation being ranked; fixed to `self.postings.get(term, ())`.)
+
+Re-run with `experiments/idf_retraction_check.py`, same 3 conversations,
+n=494, shared IDF corpus (1451 docs):
+
+| ranking | hit@1 | hit@5 | hit@10 |
+|---|---|---|---|
+| TF-IDF cosine (exact-sparse, **the ceiling**) | **0.322** | 0.565 | 0.642 |
+| BM25 (exact-sparse) | 0.304 | 0.524 | 0.599 |
+| RP-4096-bm25, seed 0 | 0.330 | 0.581 | 0.640 |
+| RP-4096-bm25, seed 1 | 0.318 | 0.555 | 0.628 |
+| RP-4096-bm25, seed 2 | 0.310 | 0.579 | 0.648 |
+| RP-4096-bm25, seed 3 | 0.314 | 0.555 | 0.634 |
+| RP-4096-bm25, seed 4 | 0.332 | 0.573 | 0.636 |
+| **RP-4096-bm25, mean ± sd over 5 seeds** | **0.321 ± 0.010** | 0.569 ± 0.013 | 0.637 ± 0.007 |
+
+Exact paired McNemar, RP-4096-bm25 vs exact-sparse TF-IDF, hit@1, per seed:
+
+| seed | delta | b01 | b10 | p |
+|---|---|---|---|---|
+| 0 | +0.0081 | 15 | 11 | 0.5572 |
+| 1 | −0.0040 | 12 | 14 | 0.8450 |
+| 2 | −0.0121 | 7 | 13 | 0.2632 |
+| 3 | −0.0081 | 9 | 13 | 0.5235 |
+| 4 | +0.0101 | 17 | 12 | 0.4583 |
+
+**Verdict: the retraction is CONFIRMED, not revised.** Unifying the IDF
+convention moves both figures slightly (TF-IDF 0.320 → 0.322, RP-4096-bm25
+mean 0.319 → 0.321 — the fix was worth about 0.002, an order of magnitude
+below the ~0.04 resolution limit) but does not change the conclusion: RP-4096
+does not pass the exact-sparse ceiling. Every seed sits within ±0.012 of the
+ceiling and every McNemar test is far from significant (p ≥ 0.26, well above
+0.05), so the two are indistinguishable under this project's resolution rule —
+a tie, not a win, exactly as the original retraction stated. This is also the
+structurally expected result: RP-4096-bm25 is a Johnson–Lindenstrauss
+approximation of the same BM25-weighted cosine `TfidfIndex`/`BM25Index`
+compute exactly, so it cannot systematically beat what it approximates.
 
 ---
 

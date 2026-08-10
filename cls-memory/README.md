@@ -27,7 +27,7 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 
 ## Status
 
-151 tests pass. `examples/demo.py` runs the full lifecycle end to end.
+`examples/demo.py` runs the full lifecycle end to end.
 `experiments/benchmark.py` evaluates on a labelled synthetic corpus and
 `experiments/benchmark_locomo.py` on **real conversational data with
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
@@ -41,11 +41,31 @@ labelled "measured" was measured in this repo, not assumed.
 The package has been through an adversarial review; the defects it found and
 the fixes are in §11.
 
+**The real-embedding tests need an optional runtime.** `tests/test_superposition.py`
+holds RESULTS.md Part V's claims in place by running real BGE-small-v1.5
+embeddings through `experiments/recall_ablation.py`'s `BGEEmbedder`, which
+needs `onnxruntime` + `tokenizers` (not `sentence-transformers` — that extra
+is for the separate, untried `SentenceTransformerEmbedder`). Without that
+runtime installed, those 15 tests now **fail loudly** (not skip silently) so
+an incomplete environment can't report a clean green suite; see issue 01 and
+`tests/test_superposition.py`'s `_require_real_embeddings`. Set
+`CLS_MEMORY_ALLOW_MISSING_EMBEDDINGS=1` to explicitly acknowledge running
+without them.
+
+There is no CI config in this repo. The command below is the complete path —
+run it exactly to exercise everything, including the real-embedding tests.
+
 ```bash
-uv venv && uv pip install torch pytest
-uv run pytest                       # 151 passed
+uv venv && uv sync --extra dev --extra test-embeddings   # complete path
+uv run pytest                       # full suite, 0 skipped
 PYTHONPATH=. uv run python examples/demo.py
 ```
+`uv sync` prunes anything not in the extras you name. `fastembed` is currently
+installed in this venv but is *only* used by `experiments/bge_base_probe.py`
+(nothing in the test suite imports it — `BGEEmbedder` drives ONNX and
+`tokenizers` directly). Add `--extra probes` if you want that probe to keep
+working.
+
 
 ---
 

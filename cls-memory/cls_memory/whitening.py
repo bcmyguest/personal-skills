@@ -17,8 +17,15 @@ brings that to **-0.001**, and per-item recall of k memories superposed into ONE
     16        0.049       0.974       0.966
     32        0.070       0.892       0.850
 
-Whitening recovers essentially the full theoretical capacity. See RESULTS.md
-Part V.2, and `ModernHopfieldNetwork.superpose` for the operation this feeds.
+Whitening recovers essentially the full theoretical capacity -- **when the
+whitener is fit on the same vectors it then scores**, which is the transductive
+case above. Fit on a disjoint corpus instead (review ticket 04: 5094 turns from
+8 *other* LoCoMo conversations, applied unchanged to these 788), the same k=8
+cell falls from 0.999 to 0.221 -- whitening still helps (unwhitened is 0.064),
+but "recovers the full theoretical capacity" does not survive an honest fit.
+See RESULTS.md Part V.2 for both numbers side by side, `fit`'s docstring for
+why more held-out data does not close the gap, and
+`ModernHopfieldNetwork.superpose` for the operation this feeds.
 
 Why it is fitted, and not a function
 ------------------------------------
@@ -165,6 +172,18 @@ class Whitener(torch.nn.Module):
             variance by 1/floor amplifies pure noise by 100x. Warns.
           * zero-variance directions -- floored, not inverted.
           * an entirely constant corpus -- raises; there is nothing to whiten.
+
+        This warning guards sample *size*, not sample *representativeness*, and
+        the two are not the same failure. RESULTS.md V.2 (review ticket 04)
+        fits on a disjoint pool 13x past this threshold (5094 rows, d=384) drawn
+        from different LoCoMo conversations than the vectors later transformed,
+        and the residual anisotropy barely moves (+0.168 at n=64 to +0.167 at
+        n=5094) -- while fitting on a same-conversation disjoint half at a third
+        of the pool's size (n=394) gets anisotropy +0.003, matching an in-sample
+        fit. A corpus that clears `n >= dim` by an order of magnitude can still
+        leave most of the anisotropy gap unclosed if it does not resemble what
+        gets transformed. Fit on a sample that represents the deployment
+        traffic, not merely a large one.
         """
         x = x.detach()
         if x.dim() != 2:
@@ -331,8 +350,16 @@ class WhitenedEmbedder:
         self.whitener.fit(self.embedder.encode(list(texts)))
         return self
 
-    def encode(self, texts: Sequence[str]) -> Tensor:
-        x = self.embedder.encode(texts)
+    def _encode(self, texts: Sequence[str], *, raw: Tensor) -> Tensor:
+        """Apply the fitted whitener to `raw`, or pass it through unfitted.
+
+        Shared by `encode` and `encode_query` so the pass-through and
+        warn-once behaviour is identical on both paths -- the query path used
+        to not exist at all, which meant `getattr(embedder, "encode_query",
+        embedder.encode)` call sites silently fell back to `encode` and lost
+        the wrapped embedder's query prefix (e.g. BGE's instruction string)
+        even though the baseline arm kept it. See `encode_query` below.
+        """
         if not self.whitener.is_fitted:
             if not self._warned:
                 warnings.warn(
@@ -342,5 +369,26 @@ class WhitenedEmbedder:
                     stacklevel=2,
                 )
                 self._warned = True
-            return x
-        return self.whitener.transform(x)
+            return raw
+        return self.whitener.transform(raw)
+
+    def encode(self, texts: Sequence[str]) -> Tensor:
+        return self._encode(texts, raw=self.embedder.encode(texts))
+
+    def encode_query(self, texts: Sequence[str]) -> Tensor:
+        """Whiten the wrapped embedder's *query* encoding, not its document one.
+
+        Delegates to `self.embedder.encode_query` when the wrapped embedder has
+        one (e.g. BGE's instruction-prefixed query path), falling back to
+        `encode` otherwise -- the same delegation `HybridEmbedder.encode_query`
+        in `experiments/recall_ablation.py` uses. Without this method, every
+        call-site pattern of the form
+        `getattr(embedder, "encode_query", embedder.encode)` used `encode` for
+        queries too, so a whitened BGE arm silently dropped the query prefix
+        while the unwhitened baseline arm kept it -- every whitened-vs-shipped
+        comparison was partly measuring that missing prefix rather than
+        whitening. The *same* fitted whitener transform is applied here as in
+        `encode`, because documents and queries must land in the same space.
+        """
+        inner_query = getattr(self.embedder, "encode_query", self.embedder.encode)
+        return self._encode(texts, raw=inner_query(texts))

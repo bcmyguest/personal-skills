@@ -69,7 +69,7 @@ def token_counts(embedder: BGEEmbedder, rules: list[Rule]) -> dict[str, int]:
 def evaluate(name: str, ranker, tokens: dict[str, int], *, verbose: bool) -> dict:
     """Walk each ranking under a token budget and score coverage vs staleness."""
     stale = stale_rule_ids()
-    covered, spend, stale_hits, trap_hits = [], [], [], []
+    covered, spend, stale_hits, trap_hits, admitted_counts = [], [], [], [], []
     detail = []
 
     for sit in SITUATIONS:
@@ -82,7 +82,13 @@ def evaluate(name: str, ranker, tokens: dict[str, int], *, verbose: bool) -> dic
         for rule_id in ranked:
             cost = tokens[rule_id]
             if spent + cost > BUDGET:
-                continue
+                # Stop at the limit. Skipping this rule and continuing down
+                # the ranking would quietly backfill with cheaper, lower-
+                # ranked rules -- packing more items into the budget than the
+                # ranking actually recommends, and no longer measuring "the
+                # top of the ranking that fits", which is the thing a real
+                # prompt-injection caller does (it appends until it can't).
+                break
             spent += cost
             injected.append(rule_id)
 
@@ -90,6 +96,7 @@ def evaluate(name: str, ranker, tokens: dict[str, int], *, verbose: bool) -> dic
         covered.append(len(got) / len(gold))
         stale_hits.append(int(bool(set(injected) & stale)))
         trap_hits.append(int(bool(set(injected) & traps)))
+        admitted_counts.append(len(injected))
 
         # Tokens needed to cover every gold rule, ignoring the budget cap.
         running, need = 0, set(gold)
@@ -107,10 +114,12 @@ def evaluate(name: str, ranker, tokens: dict[str, int], *, verbose: bool) -> dic
         "tokens": sum(spend) / n,
         "stale": sum(stale_hits) / n,
         "trap": sum(trap_hits) / n,
+        "admitted": sum(admitted_counts) / n,
     }
     print(f"  {name:<28} coverage@{BUDGET} {result['coverage']:.2f}   "
           f"tokens@cover {result['tokens']:5.0f}   "
-          f"stale@{BUDGET} {result['stale']:.2f}   trap@{BUDGET} {result['trap']:.2f}")
+          f"stale@{BUDGET} {result['stale']:.2f}   trap@{BUDGET} {result['trap']:.2f}   "
+          f"admitted@{BUDGET} {result['admitted']:.1f}")
 
     if verbose:
         for sit, injected, got, bad in detail:
@@ -191,11 +200,33 @@ def gated_arm(rules: list[Rule], embedder, threshold: float):
     Also reports how many of its replacement decisions were correct, because an
     over-eager gate silently deletes live policy, which is a worse failure than
     anything measured in Part 1.
+
+    Staleness must be scored against the FULL rule set, not against a store
+    the gate has already shrunk. An earlier version of this arm called
+    `knn_arm(live, embedder)`, ranking *only* the rules the gate decided to
+    keep -- so a rule the gate dropped could not structurally appear in the
+    ranking at all, and `stale@256` measured nothing but "did the gate drop
+    every superseded rule" (already reported above as the miss count), a
+    number this function already prints. That made a gate which correctly
+    drops everything score a *guaranteed* 0.00 regardless of how retrieval
+    would have ranked those rules, and gave no way to tell "the gate worked"
+    apart from "the gate had nothing left to fail on".
+
+    Instead: rank over every rule exactly like the other arms, and express the
+    gate's write-time verdict as a demotion, not a deletion -- rules it
+    decided to replace sort strictly after every rule it kept. A gate that
+    drops nothing produces the identical ranking to plain kNN (scores exactly
+    as badly as the ungated arm); a gate that drops every superseded rule
+    demotes them out of the budget's reach on this corpus, exactly as
+    dropping them would, but a rule the gate *misses* keeps its ordinary
+    similarity rank and is fully exposed to genuine staleness risk -- so a
+    partially-working gate is measurably different from a fully-working one.
     """
     order = sorted(rules, key=lambda r: r.day)
     vectors = {r.rule_id: v for r, v in zip(rules, embedder.encode([r.text for r in rules]))}
 
     live: list[Rule] = []
+    dropped_ids: set[str] = set()
     right = wrong = 0
     for rule in order:
         if live:
@@ -212,6 +243,7 @@ def gated_arm(rules: list[Rule], embedder, threshold: float):
                           f"{replaced.rule_id} when {rule.rule_id} arrived "
                           f"(cos {float(sims[best]):.3f})]")
                 live.pop(best)
+                dropped_ids.add(replaced.rule_id)
         live.append(rule)
 
     kept = {r.rule_id for r in live}
@@ -219,7 +251,16 @@ def gated_arm(rules: list[Rule], embedder, threshold: float):
     print(f"    [gate @{threshold:.2f}: {right} correct replacements, "
           f"{wrong} wrong, {missed} stale rules left in the store, "
           f"{len(live)}/{len(rules)} kept]")
-    return knn_arm(live, embedder)
+
+    full_rank = knn_arm(rules, embedder)
+
+    def rank(question: str) -> list[str]:
+        ordering = full_rank(question)
+        kept_order = [rid for rid in ordering if rid not in dropped_ids]
+        demoted_order = [rid for rid in ordering if rid in dropped_ids]
+        return kept_order + demoted_order
+
+    return rank
 
 
 def oracle_arm(rules: list[Rule], embedder):

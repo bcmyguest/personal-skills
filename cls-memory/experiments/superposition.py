@@ -39,6 +39,8 @@ import math
 import torch
 
 from cls_memory import HopfieldConfig, ModernHopfieldNetwork
+from cls_memory.config import WhiteningConfig
+from cls_memory.whitening import Whitener, anisotropy
 from experiments import locomo
 from experiments.recall_ablation import BGEEmbedder
 from experiments.rulebook import RULES
@@ -108,125 +110,207 @@ def part1_identity(embedder) -> None:
 # Part 2: superposition capacity
 
 
-def superpose(patterns: torch.Tensor, members: list[int], beta: float,
-              mhn: ModernHopfieldNetwork) -> torch.Tensor:
-    """One settled state carrying k memories.
+def settle_superposed(members: list[int], beta: float,
+                      mhn: ModernHopfieldNetwork) -> torch.Tensor:
+    """Hold k memories in one vector, then SETTLE it -- the V.3 operation.
 
-    Seeded from the mean of the members -- the state a cue touching all of them
-    would produce -- then settled by the Hopfield update, so what is measured is
-    a genuine attractor of the landscape rather than an arbitrary average.
+    Both halves are the library's: `ModernHopfieldNetwork.superpose` builds the
+    normalised sum (the `hold`), and `step` runs the Hopfield update. This
+    function is only the composition of the two, kept here because "what does
+    settling do to a superposition" is the question V.3 asks and neither
+    library method answers it alone.
+
+    Previously this file carried its own copy of both halves (ticket 06), so
+    Parts V.5/VI.2/VI.3 claimed to be measured "through the library classes"
+    while actually running private duplicates.
     """
-    state = patterns[members].mean(dim=0)
-    state = state / state.norm().clamp_min(1e-12)
+    state = mhn.superpose(members)
     for _ in range(8):
         nxt = mhn.step(state, beta)
         nxt = nxt / nxt.norm().clamp_min(1e-12)
         if float((nxt - state).norm()) < 1e-6:
-            state = nxt
-            break
+            return nxt
         state = nxt
     return state
 
 
-def capacity_curve(name: str, patterns: torch.Tensor, *, beta: float,
+def capacity_curve(name: str, patterns: torch.Tensor, *,
                    trials: int, ks: list[int], generator: torch.Generator) -> None:
-    n, d = patterns.shape
-    mhn = ModernHopfieldNetwork(d, HopfieldConfig(beta=beta))
-    mhn.write(patterns)
+    """Per-item recall of the HOLD operation: k memories summed into one
+    normalised vector, decoded by cosine (== attention-logit order, since
+    scaling by a positive beta never changes a ranking) against the store.
 
-    print(f"\n  {name}: {n} memories, d={d}, beta={beta:g}")
+    Deliberately **not settled**. RESULTS.md V.3 / `beta_sweep` below show that
+    running the Hopfield update on a superposed state collapses it onto a
+    single attractor at every beta tried -- that is a different operation
+    (`retrieve`/`complete`), not this one (`superpose`/`hold`). An earlier
+    version of this function settled the state before decoding it, which is
+    exactly the V.3 mistake applied to V.2's own measurement: it silently
+    stopped reproducing the published capacity table (1.000 at k=4) and instead
+    reproduced the collapsed numbers V.3 already reports (0.253 at k=4).
+    Capacity is a property of the code being superposed, not of beta.
+    """
+    n, d = patterns.shape
+    # The hold and the decode are both the library's (ticket 06): `superpose`
+    # builds the normalised sum, `decode` ranks by the attention LOGITS the
+    # Hopfield head computes. For unit-norm patterns under a uniform prior that
+    # ranking is identical to cosine against the store -- which is why this
+    # reproduces the previously published table rather than moving it.
+    mhn = ModernHopfieldNetwork(d, HopfieldConfig())
+    mhn.write(patterns)
+    print(f"\n  {name}: {n} memories, d={d}")
     print(f"    {'k':>3}  {'per-item recall':>15}  {'exact set':>10}  "
-          f"{'mean cos to members':>20}  {'ideal sum':>10}")
+          f"{'mean cos to members':>20}")
     for k in ks:
         if k > n:
             continue
-        recalled, exact, cosines, ideal = [], [], [], []
+        recalled, exact, cosines = [], [], []
         for _ in range(trials):
             members = torch.randperm(n, generator=generator)[:k].tolist()
-            state = superpose(patterns, members, beta, mhn)
+            state = mhn.superpose(members)
 
-            sims = patterns @ state
-            top = torch.topk(sims, k).indices.tolist()
+            top = mhn.decode(state, k).tolist()
             hit = len(set(top) & set(members))
             recalled.append(hit / k)
             exact.append(int(hit == k))
-            cosines.append(float(sims[members].mean()))
-
-            # Ceiling: the plain normalised sum, with no attractor dynamics.
-            # If the settled state cannot beat this, the settling is decoration.
-            raw = patterns[members].mean(dim=0)
-            raw = raw / raw.norm().clamp_min(1e-12)
-            top_raw = torch.topk(patterns @ raw, k).indices.tolist()
-            ideal.append(len(set(top_raw) & set(members)) / k)
+            cosines.append(float((patterns[members] @ state).mean()))
 
         print(f"    {k:>3}  {sum(recalled)/trials:>15.3f}  "
-              f"{sum(exact)/trials:>10.2f}  {sum(cosines)/trials:>20.3f}  "
-              f"{sum(ideal)/trials:>10.3f}")
+              f"{sum(exact)/trials:>10.2f}  {sum(cosines)/trials:>20.3f}")
 
 
-def whiten(x: torch.Tensor, *, floor: float = 1e-2) -> torch.Tensor:
-    """Centre, ZCA-whiten, renormalise -- an isotropic code for the same content.
+def whiten(x: torch.Tensor, *, fit_on: torch.Tensor | None = None,
+           floor: float = 1e-2) -> torch.Tensor:
+    """Centre, ZCA-whiten, renormalise -- via `cls_memory.whitening.Whitener`.
 
-    Sentence embeddings are famously anisotropic: BGE vectors for *unrelated*
-    text sit at cosine ~0.75, all crammed into a narrow cone. Superposition
-    needs the opposite. A sum of k vectors retains each component at cosine
-    ~1/sqrt(k) only when they are near-orthogonal; when everything already
-    points the same way there is no component structure left to decode, and a
-    mixture is indistinguishable from any other mixture.
+    A thin adapter, not an implementation: it exists so the call sites below
+    can stay one-liners while the actual transform is the library's fitted
+    `Whitener` (ticket 06 -- this file used to carry its own SVD copy, so the
+    published claim that V.5/VI.2/VI.3 were re-measured "through the library
+    classes" was not reproducible from the code on the branch).
 
-    Whitening equalises the covariance spectrum, which is the standard fix
-    (Mu & Viswanath 2018 "all-but-the-top"; Su et al. 2021 "whitening
-    sentence representations"). `floor` regularises the small singular values,
-    which are noise directions that would otherwise be amplified enormously.
+    `fit_on` decouples the fit from the transform: the mean/rotation/scale are
+    estimated on `fit_on` and then applied to `x`. Left as `None` the fit is
+    transductive -- fit on `x`, applied to `x` -- which flatters the result;
+    RESULTS.md V.2 measures how much.
     """
-    centred = x - x.mean(dim=0, keepdim=True)
-    _, s, vh = torch.linalg.svd(centred, full_matrices=False)
-    scale = (s / math.sqrt(x.shape[0])).clamp_min(floor)
-    out = (centred @ vh.T / scale) @ vh
-    return out / out.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    basis = x if fit_on is None else fit_on
+    whitener = Whitener(x.shape[1], WhiteningConfig(floor=floor)).fit(basis)
+    return whitener.transform(x)
 
 
-def anisotropy(x: torch.Tensor, generator: torch.Generator, pairs: int = 20000) -> float:
-    """Mean cosine between random distinct pairs -- 0.0 is an isotropic code."""
-    n = x.shape[0]
-    i = torch.randint(0, n, (pairs,), generator=generator)
-    j = torch.randint(0, n, (pairs,), generator=generator)
-    keep = i != j
-    return float((x[i[keep]] * x[j[keep]]).sum(-1).mean())
+def fit_size_check(facts: torch.Tensor, fit_pool: torch.Tensor,
+                   generator: torch.Generator, *, trials: int) -> None:
+    """How many held-out rows does the whitener actually need?
+
+    `Whitener.fit` warns below `n < d` samples (rank-deficient covariance).
+    This sweeps the *size* of the disjoint fit corpus from well below that
+    threshold to the full pool and reports anisotropy and k=8/k=32 per-item
+    recall on `facts` at each size, so the warning threshold can be checked
+    against where the held-out measurement actually stops moving rather than
+    assumed correct.
+    """
+    d = facts.shape[1]
+    pool_n = fit_pool.shape[0]
+    sizes = sorted(set(
+        s for s in (64, 128, 256, d // 2, d - 1, d, d + 1, 512, 768, 1536, 3072, pool_n)
+        if 2 <= s <= pool_n
+    ))
+    print(f"\n  fit-size check: Whitener.fit warns below n={d} samples "
+          f"(rank-deficient covariance). Disjoint pool has {pool_n} rows.")
+    print(f"    {'n_fit':>7}  {'< d warns?':>10}  {'anisotropy':>11}  "
+          f"{'recall@k=8':>11}  {'recall@k=32':>12}")
+    for n_fit in sizes:
+        sub = fit_pool[:n_fit]
+        white = whiten(facts, fit_on=sub)
+        aniso = anisotropy(white, generator=generator)
+        recalls = {}
+        for k in (8, 32):
+            recalled = []
+            for _ in range(trials):
+                members = torch.randperm(facts.shape[0], generator=generator)[:k].tolist()
+                state = white[members].mean(dim=0)
+                state = state / state.norm().clamp_min(1e-12)
+                top = torch.topk(white @ state, k).indices.tolist()
+                recalled.append(len(set(top) & set(members)) / k)
+            recalls[k] = sum(recalled) / trials
+        warns = "yes" if n_fit < d else "no"
+        print(f"    {n_fit:>7}  {warns:>10}  {aniso:>+11.3f}  "
+              f"{recalls[8]:>11.3f}  {recalls[32]:>12.3f}")
+
+    # The sweep above holds domain fixed (fit corpus = 8 *other* conversations)
+    # and varies size. It does not move much past a few hundred rows -- which
+    # raises the question the size sweep cannot answer on its own: is the
+    # residual anisotropy a SIZE problem (not enough disjoint rows) or a
+    # DOMAIN problem (disjoint rows drawn from different conversations, with
+    # different topics/speakers, don't share the scored corpus's local
+    # geometry)? This holds size roughly fixed and varies domain instead: fit
+    # on a disjoint half of the SAME two conversations the capacity table
+    # scores, rather than the other eight.
+    n_facts = facts.shape[0]
+    perm = torch.randperm(n_facts, generator=generator)
+    half = n_facts // 2
+    fit_half, score_half = facts[perm[:half]], facts[perm[half:]]
+    white_same_domain = whiten(score_half, fit_on=fit_half)
+    aniso_same_domain = anisotropy(white_same_domain, generator=generator)
+    print(f"\n  same-domain control: fit on a disjoint half of the SAME two "
+          f"conversations (n={half}, well under the {pool_n}-row cross-"
+          f"conversation pool above), scored on the other half (n={n_facts - half}):")
+    print(f"    anisotropy {aniso_same_domain:+.3f}")
+    print("    -> if this is close to the in-sample fit's anisotropy and far "
+          "below the cross-conversation held-out fit's, the gap above is "
+          "domain shift, not sample size, and the n<d warning (which only "
+          "guards rank-deficiency) cannot detect it.")
 
 
-def part2_capacity(embedder, trials: int, beta: float) -> None:
+def part2_capacity(embedder, trials: int) -> None:
     print("\n" + "=" * 78)
     print("PART 2 -- how many memories fit in ONE vector and stay decodable?")
     print("=" * 78)
     print("  per-item recall = fraction of the k superposed memories that rank")
     print("  in the top k. exact set = all k recovered, no intruders.")
-    print("  'ideal sum' is the same test on the plain normalised mean, which")
-    print("  is the ceiling any settling has to justify itself against.")
+    print("  'hold' is the plain normalised sum, no Hopfield settling -- see")
+    print("  capacity_curve's docstring for why settling must not be used here.")
 
     generator = torch.Generator().manual_seed(0)
     ks = [1, 2, 4, 8, 16, 32, 64]
 
-    turns = [t.memory_text for c in locomo.load()[:2] for t in c.turns]
-    facts = embedder.encode(turns)
+    conversations = locomo.load()
+    scored_turns = [t.memory_text for c in conversations[:2] for t in c.turns]
+    fit_turns = [t.memory_text for c in conversations[2:] for t in c.turns]
+    facts = embedder.encode(scored_turns)
+    fit_pool = embedder.encode(fit_turns)
     n, d = facts.shape
 
-    print(f"\n  anisotropy (mean cosine between unrelated memories):")
-    print(f"    BGE as shipped   {anisotropy(facts, generator):+.3f}")
-    white = whiten(facts)
-    print(f"    BGE whitened     {anisotropy(white, generator):+.3f}")
+    print("\n  anisotropy (mean cosine between unrelated memories):")
+    print(f"    BGE as shipped                          {anisotropy(facts, generator=generator):+.3f}")
+    white_in_sample = whiten(facts)
+    print(f"    BGE whitened, IN-SAMPLE fit (n={n}, transductive)  "
+          f"{anisotropy(white_in_sample, generator=generator):+.3f}")
+    white_held_out = whiten(facts, fit_on=fit_pool)
+    print(f"    BGE whitened, HELD-OUT fit (n={fit_pool.shape[0]}, disjoint)     "
+          f"{anisotropy(white_held_out, generator=generator):+.3f}")
     control = torch.randn(n, d, generator=generator)
     control = control / control.norm(dim=-1, keepdim=True)
-    print(f"    random unit      {anisotropy(control, generator):+.3f}   "
+    print(f"    random unit                             {anisotropy(control, generator=generator):+.3f}   "
           f"<- the isotropic ideal")
 
-    capacity_curve("LoCoMo turns, BGE as shipped", facts, beta=beta,
+    capacity_curve("LoCoMo turns, BGE as shipped", facts,
                    trials=trials, ks=ks, generator=generator)
-    capacity_curve("LoCoMo turns, BGE WHITENED", white, beta=beta,
+    capacity_curve("LoCoMo turns, BGE WHITENED (in-sample fit -- transductive, "
+                   "flatters the result)", white_in_sample,
                    trials=trials, ks=ks, generator=generator)
-    capacity_curve("random unit vectors (ceiling)", control, beta=beta,
+    capacity_curve("LoCoMo turns, BGE WHITENED (held-out fit -- the honest number)",
+                   white_held_out, trials=trials, ks=ks, generator=generator)
+    capacity_curve("random unit vectors (ceiling)", control,
                    trials=trials, ks=ks, generator=generator)
-    beta_sweep(white, ks=[2, 4, 8, 16, 32], trials=trials, generator=generator)
+
+    fit_size_check(facts, fit_pool, generator, trials=max(20, trials // 4))
+
+    # V.3 (owned by a different section of RESULTS.md, unaffected by this
+    # ticket's fit-scope fix) was published against the in-sample-whitened
+    # vectors -- keep feeding it the same basis so it stays reproducible.
+    beta_sweep(white_in_sample, ks=[2, 4, 8, 16, 32], trials=trials, generator=generator)
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +354,7 @@ def beta_sweep(patterns: torch.Tensor, *, ks: list[int], trials: int,
                 top_raw = torch.topk(patterns @ raw, k).indices.tolist()
                 raws.append(len(set(top_raw) & set(members)) / k)
 
-                state = superpose(patterns, members, beta, mhn)
+                state = settle_superposed(members, beta, mhn)
                 top = torch.topk(patterns @ state, k).indices.tolist()
                 hits.append(len(set(top) & set(members)) / k)
             cells.append(sum(hits) / trials)
@@ -299,13 +383,12 @@ def part3_budget(embedder) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trials", type=int, default=200)
-    parser.add_argument("--beta", type=float, default=128.0)
     args = parser.parse_args()
     torch.manual_seed(0)
 
     embedder = BGEEmbedder()
     part1_identity(embedder)
-    part2_capacity(embedder, args.trials, args.beta)
+    part2_capacity(embedder, args.trials)
     part3_budget(embedder)
 
 

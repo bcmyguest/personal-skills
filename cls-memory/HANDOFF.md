@@ -17,8 +17,9 @@ explicitly listed below as a known limitation.
 
 ```bash
 cd cls-memory
-uv venv && uv pip install torch pytest        # HuggingFace is unreachable here
-uv run pytest                                  # 131 pass, ~60s
+uv venv
+uv sync --extra dev --extra test-embeddings    # complete path -- see below
+uv run pytest                                  # full suite, 0 skipped
 PYTHONPATH=. uv run python examples/demo.py    # full lifecycle
 
 # the two real datasets (gitignored, ~5.5 MB total)
@@ -27,6 +28,24 @@ curl -sLo experiments/data/locomo10.json \
 curl -sLo experiments/data/qmsum_test.jsonl \
   https://raw.githubusercontent.com/Yale-LILY/QMSum/main/data/ALL/jsonl/test.jsonl
 ```
+
+**`test-embeddings` (`onnxruntime` + `tokenizers`) is required to run the full
+suite.** `tests/test_superposition.py` runs real BGE-small-v1.5 embeddings
+through `experiments/recall_ablation.py`'s `BGEEmbedder` to back RESULTS.md
+Part V's claims. Without that extra installed those 15 tests **fail loudly**
+(not skip silently, as of issue 01) so a reviewer can't mistake a green run
+for one that verified those claims — set
+`CLS_MEMORY_ALLOW_MISSING_EMBEDDINGS=1` to explicitly opt into the old skip
+behaviour instead. This is a separate dependency from the `embeddings` extra
+(`sentence-transformers`), which backs the untried `SentenceTransformerEmbedder`
+and gates nothing in the test suite. **No CI config exists in this repo** —
+the command above is the complete path; run it exactly to exercise everything.
+
+`uv sync` prunes anything not in the extras you name. `fastembed` is currently
+installed in this venv but is *only* used by `experiments/bge_base_probe.py`
+(nothing in the test suite imports it — `BGEEmbedder` drives ONNX and
+`tokenizers` directly). Add `--extra probes` if you want that probe to keep
+working.
 
 Read in this order: `README.md` (design + §11–13 review history), `RESULTS.md`
 (every measured number, Parts I–III), then this file.
@@ -276,6 +295,17 @@ the conclusions drawn from them. What survives, what does not:
    0.320 exact-sparse figure it was said to pass — and it structurally cannot
    beat it, being a JL approximation of exactly that cosine. Always report
    mean +- sd for a randomised projection.
+   **Re-checked under ticket 05** (the IDF-convention fix below was not
+   actually wired up when this line was first written — see the correction to
+   "Also fixed", next). With `BM25Index`/`TfidfIndex` genuinely sharing
+   `HashedProjection`'s IDF corpus, `experiments/idf_retraction_check.py`
+   (same 3 conversations, n=494) gets exact-sparse TF-IDF **0.322** and
+   RP-4096-bm25 **0.321 +- 0.010** over 5 seeds (0.310-0.332); exact paired
+   McNemar against the ceiling is not significant at any seed (p in
+   [0.26, 0.85], every |delta| <= 0.012). **RETRACTION CONFIRMED** — unifying
+   the convention moved both figures by ~0.002, an order of magnitude below
+   the ~0.04 resolution limit, and changed nothing about the conclusion. See
+   RESULTS.md VI.5.
 2. **"Random projection beats truncated SVD at equal dimension."** False once
    the feature sets are matched. LSA was capped at `max_features=20_000,
    min_df=2` and saw 20k terms; `HashedProjection` saw 66k. **The cap was the
@@ -291,10 +321,19 @@ the conclusions drawn from them. What survives, what does not:
 
 **Also fixed:** `HybridEmbedder` had no `encode_query`, so the getattr fallback
 used BGE's *document* encoder for queries — every hybrid row was measured
-without the query prefix while the BGE-alone row above it had it. Lexical
-baselines now share one IDF convention with the projection (the mismatch was
-worth ~0.008 hit@1, about the size of the effect it was used to claim). A
-partial weights directory no longer takes down the run.
+without the query prefix while the BGE-alone row above it had it. A partial
+weights directory no longer takes down the run.
+
+**Correction (ticket 05):** the line above used to also claim "lexical
+baselines now share one IDF convention with the projection." That was
+aspirational, not true: `TfidfIndex` grew an `idf_corpus` hook but nothing
+ever called it, and `BM25Index` had no such hook at all, so `TfidfIndex`/
+`BM25Index` kept fitting IDF per-conversation while `HashedProjection` fit on
+the whole corpus — the exact mismatch item 1 above is about. `BM25Index` now
+has the same hook, `recall_ablation.py`'s ceilings section threads one shared
+`idf_corpus` through every lexical/hashed row and asserts it (`assert_shared_idf`),
+and the run prints which corpus was used. See RESULTS.md VI.5 for the
+re-verified numbers — the retraction survives.
 
 **Statistics.** `experiments/metrics.py` now has an exact paired McNemar test.
 At LoCoMo's n=494, **differences below ~0.04 hit@1 are not resolvable**. Under
