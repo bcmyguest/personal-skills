@@ -709,6 +709,163 @@ to verify a mechanism being wrong in the mechanism's favour (see HANDOFF §5).
 
 ---
 
+## IV.3 The retrieval harness can express the separation configurations (ticket 07)
+
+`experiments/recall_check.py` had no whitening axis at all, so **no whitened
+retrieval number had ever been produced by this project**, and pattern
+separation was reachable but in no published sweep. Both are now ordinary
+sweep axes, selectable per row, on either corpus (`--corpus`).
+
+Each row reports the separation **actually achieved** — `anisotropy()` over the
+embeddings and hippocampal keys that row really wrote to the store — not the
+configuration that was requested. Anisotropy is the mean cosine between
+unrelated pairs, so **lower is better separated**; 0.0 is isotropic.
+
+LoCoMo, 3 conversations, 1451 turns, n=494:
+
+| configuration | @1 | @5 | @10 | aniso_emb | aniso_key |
+|---|---|---|---|---|---|
+| was: LSA-256, separated, beta=8 | 0.002 | 0.010 | 0.026 | 0.080 | 0.152 |
+| + beta=128 | 0.221 | 0.281 | 0.354 | 0.080 | 0.152 |
+| + key=embedding | 0.217 | 0.289 | 0.340 | 0.080 | 0.080 |
+| now: + LSA-1024 | 0.306 | 0.358 | 0.383 | 0.041 | 0.041 |
+| + whitened | **0.342** | 0.356 | 0.364 | **−0.001** | **−0.001** |
+| + key=separated | 0.291 | 0.356 | 0.399 | 0.041 | 0.134 |
+| + key=separated, whitened | 0.322 | 0.348 | 0.352 | −0.001 | 0.117 |
+
+The first four rows reproduce the pre-refactor harness **exactly**, to three
+decimals on all three metrics, so the new axes did not disturb the cumulative
+history they were added alongside.
+
+QMSum, **8 meetings, 4201 turns, n=53** — a deliberately reduced slice (the
+25-meeting slice costs hours per LSA-1024 row). 53 questions cannot resolve a
+recall difference at this project's ~0.04 limit; the anisotropy columns are
+unaffected by that, being properties of the code and corpus rather than of the
+question set:
+
+| configuration | @1 | @5 | @10 | aniso_emb | aniso_key |
+|---|---|---|---|---|---|
+| was: LSA-256, separated, beta=8 | 0.019 | 0.226 | 0.396 | 0.074 | 0.151 |
+| + beta=128 | 0.245 | 0.528 | 0.642 | 0.074 | 0.151 |
+| + key=embedding | 0.264 | 0.472 | 0.585 | 0.074 | 0.074 |
+| now: + LSA-1024 | 0.396 | 0.623 | 0.736 | 0.048 | 0.048 |
+| + whitened | 0.415 | 0.642 | 0.679 | **0.000** | **0.000** |
+| + key=separated | 0.358 | 0.604 | 0.660 | 0.048 | **0.139** |
+| + key=separated, whitened | 0.434 | 0.623 | 0.660 | 0.000 | 0.118 |
+
+**The de-separation replicates on the second corpus.** DG raises key anisotropy
+0.048 → 0.139 on QMSum, against 0.041 → 0.134 on LoCoMo — the same effect, the
+same size, on two unrelated corpora. Whitening drives it to 0.000 on both. The
+recall directions also agree across corpora (whitening +0.036 LoCoMo / +0.019
+QMSum; DG −0.015 / −0.038), so there is no corpus-overfitting signal here in
+either direction — but the QMSum magnitudes rest on 53 questions and must not
+be quoted as effects.
+
+**The measured column immediately contradicted the premise it was added to
+test.** Review ticket 08 is written on the assumption that "two mechanisms in
+this codebase raise separation directly — whitening and dentate-gyrus pattern
+separation". Measured, only one of them does:
+
+- **Whitening raises separation as advertised**: key anisotropy 0.041 → −0.001,
+  i.e. fully isotropic, exactly the effect V.2 reports for BGE.
+- **Dentate-gyrus separation *lowers* it.** `key=SEPARATED` moves key
+  anisotropy the wrong way, 0.041 → **0.134** at LSA-1024, and 0.080 → 0.152 at
+  LSA-256. The DG keys for unrelated text are **more** alike than the raw
+  embeddings they are computed from. The mechanism named "pattern separation"
+  is, on this embedder, a pattern *de*-separation.
+
+Recall agrees with the diagnostic: `key=separated` scores 0.291@1 against the
+0.306 baseline, while whitening scores 0.342. This is precisely what ticket
+07's "report the measured quantity, not the intent" requirement exists to
+catch, and it is a correction to the reasoning ticket 08 was to be built on.
+
+**Not yet resolvable.** Whitening's +0.036 hit@1 over baseline sits just under
+this project's ~0.04 resolution limit at n=494 and has not been McNemar-tested
+here; it is not yet a finding. The QMSum half is a reduced slice and is
+reported separately. Do not promote a default off this table.
+
+---
+
+## IV.4 The separation mechanisms, turned on and measured (ticket 08)
+
+The system has never been measured with its separation mechanisms enabled.
+`experiments/separation_check.py` runs four arms at one operating point
+(LSA-1024, beta=128) on both corpora and compares each against the baseline
+with the **exact paired McNemar test**.
+
+**The ticket's premise did not survive contact with the measurement**, and the
+experiment was rebuilt around what is actually true. Ticket 08 assumes two
+mechanisms raise separation. Only whitening does; dentate-gyrus keys *lower*
+it (IV.3). DG is therefore carried as a **negative control**: if separation is
+what the capacity story says it is, the arm that lowers separation should not
+beat the arm that raises it. That is falsifiable in a way the original framing
+was not.
+
+LoCoMo, n=494:
+
+| arm | @1 | @10 | aniso_key | @1 vs base | @10 vs base |
+|---|---|---|---|---|---|
+| baseline | 0.306 | 0.383 | +0.041 | — | — |
+| **whitened** (raises separation) | **0.342** | 0.364 | **−0.001** | **+0.036, p=0.0001** | −0.018, p=0.25 |
+| DG key (lowers separation) | 0.291 | 0.399 | +0.134 | −0.014, p=0.26 | +0.016, p=0.32 |
+| both | 0.322 | 0.352 | +0.117 | +0.016, p=0.20 | −0.030, p=0.049 |
+
+QMSum, 8 meetings, **n=53** — underpowered by construction; directions only:
+
+| arm | @1 | @10 | aniso_key | @1 vs base |
+|---|---|---|---|---|
+| baseline | 0.396 | 0.736 | +0.048 | — |
+| whitened | 0.415 | 0.679 | **+0.000** | +0.019, p=1.00 |
+| DG key | 0.358 | 0.660 | +0.139 | −0.038, p=0.63 |
+| both | 0.434 | 0.660 | +0.118 | +0.038, p=0.69 |
+
+**Six tests were run, so the threshold is Bonferroni-corrected to 0.05/6 =
+0.0083.** Exactly one result clears it: **whitening improves LoCoMo hit@1 by
++0.036 (p=0.0001, 20 questions flipped right against 2 flipped wrong)**. The
+"both" arm's hit@10 regression (p=0.049) does **not** survive correction and is
+not a finding. Nothing on QMSum is resolvable at n=53.
+
+**The ~0.04 heuristic and the exact test disagree here, and the exact test
+wins.** HANDOFF §3.1d's rule of thumb — "differences below ~0.04 hit@1 are not
+resolvable at n=494" — would have discarded this +0.036 as noise. The paired
+test resolves it decisively because the discordance is lopsided (20:2). The
+heuristic is a rate-difference approximation; McNemar conditions on the pairs
+and is the correct instrument. **The rule of thumb is too conservative for
+strongly paired comparisons and should not be applied mechanically.**
+
+**The one directional result, stated plainly.** The only arm that raised
+separation is the only arm that improved retrieval, and the arm that lowered
+separation improved nothing on either corpus. That is consistent with the
+capacity story's claim that separation is the quantity that matters — but it is
+a single significant cell on one corpus, not a confirmation of the theory.
+
+### Defaults: unchanged, with the measurement as the reason
+
+Whitening stays **off** by default and DG stays **off** (`KeyConfig.mode`
+already defaults to `EMBEDDING`).
+
+- **DG off is now justified by measurement rather than by the earlier
+  recall-only comparison.** It does not merely fail to help; it moves the
+  quantity it is named for in the wrong direction, on two unrelated corpora.
+- **Whitening is not promoted despite winning its one powered test**, because
+  this project's standing rule is that a change must hold on both corpora and
+  QMSum's 53 questions cannot support it. Flipping this default needs a
+  powered QMSum run (25 meetings, 170 q) showing the same direction. That run
+  costs hours per row and has not been made.
+
+### Do the earlier retrieval conclusions survive?
+
+Partly, and the part that does not is bounded. Everything above is still at
+beta=128, where the energy is provably a monotone function of top-1 cosine, so
+none of it tests the Hopfield layer against cosine — that is ticket 09's grid,
+which has not been run. What IS now established is that the earlier conclusions
+were drawn at a separation the mechanisms could have changed and nobody had
+changed: whitening moves key anisotropy from +0.041 to −0.001 and measurably
+improves rank-1 retrieval, so "separation was low and we compensated with beta"
+was a real choice with a real alternative, not a forced one.
+
+---
+
 # Part V — The MHN as a substrate, not a ranker
 
 Parts I–IV all scored the Hopfield network as a **ranker of text chunks**. That
@@ -1090,6 +1247,110 @@ a tie, not a win, exactly as the original retraction stated. This is also the
 structurally expected result: RP-4096-bm25 is a Johnson–Lindenstrauss
 approximation of the same BM25-weighted cosine `TfidfIndex`/`BM25Index`
 compute exactly, so it cannot systematically beat what it approximates.
+
+## VI.6 Separation mechanisms wired into the retrieval harness (ticket 07)
+
+Prefactoring, not a result: `experiments/recall_check.py` previously had no
+way to express whitening at all, and swept pattern separation only as one
+fixed point buried in its cumulative history, not as an independent axis. It
+now takes `whiten` and `key_mode` as ordinary keyword arguments to
+`evaluate()`, runs on both corpora, and reports `anisotropy()`
+(`cls_memory.whitening.anisotropy`, 0.0 = isotropic) over the embeddings and
+hippocampal keys **each row actually wrote to the store** — the measured
+quantity, not the requested configuration. This section only reports what the
+harness now measures; it draws no conclusions from it (that is ticket 08).
+
+**Baseline reproduction.** The four original cumulative rows were re-run
+unmodified (`git show HEAD:experiments/recall_check.py`, copied out and run
+standalone) and against the refactored harness, same default sizes
+(`--locomo 3 --qmsum 25`, i.e. 1451 + 14431 turns). Every hit@k value matches
+exactly:
+
+**LoCoMo** (494 questions)
+
+| configuration | unmodified script | refactored harness |
+|---|---|---|
+| was: LSA-256, separated, β=8 | 0.002 / 0.010 / 0.026 | 0.002 / 0.010 / 0.026 |
+| + β=128 | 0.221 / 0.281 / 0.354 | 0.221 / 0.281 / 0.354 |
+| + key=embedding | 0.217 / 0.289 / 0.340 | 0.217 / 0.289 / 0.340 |
+| now: + LSA-1024 | 0.306 / 0.358 / 0.383 | 0.306 / 0.358 / 0.383 |
+
+**QMSum** (170 questions, 25 meetings)
+
+| configuration | unmodified script | refactored harness |
+|---|---|---|
+| was: LSA-256, separated, β=8 | 0.047 / 0.229 / 0.376 | 0.047 / 0.229 / 0.376 |
+| + β=128 | 0.194 / 0.394 / 0.547 | 0.194 / 0.394 / 0.547 |
+| + key=embedding | 0.229 / 0.412 / 0.559 | 0.229 / 0.412 / 0.559 |
+| now: + LSA-1024 | 0.335 / 0.541 / 0.682 | 0.335 / 0.541 / 0.682 |
+
+**A correction this surfaced, not caused by the refactor.** These reproduced
+numbers (LoCoMo 0.306, QMSum 0.335 at "now") do not match the 0.250-0.251 /
+0.395 figures Part III and HANDOFF.md §2 quote for the same "current
+defaults" row. The *unmodified* script reproduces 0.306 / 0.335 too, so the
+drift predates this ticket: `LatentSemanticEmbedder`'s defaults changed
+(`max_features` uncapped from 20,000 to 100,000, `min_df` from 2 to 1 — see
+`cls_memory/embeddings.py` and the 3.1d correction in HANDOFF.md) after Part
+III's numbers were published, and the LoCoMo table there was never re-run
+against the new defaults. QMSum's slice also widened from 6 to 25 meetings
+since HANDOFF.md §2 was written. Per this project's rule, that documentation
+is now stale and flagged here rather than silently republished around; fixing
+it is not this ticket's scope, and the *harness* it is generated from is
+verified byte-for-byte unaffected by this refactor.
+
+**The new axes, and the separation actually achieved.** Two further rows per
+corpus, added at the current best operating point (dim=1024, key=embedding,
+β=128) rather than folded into the cumulative history above, so they don't
+disturb it:
+
+**LoCoMo**
+
+| configuration | hit@1 | hit@5 | hit@10 | aniso_emb | aniso_key |
+|---|---|---|---|---|---|
+| now: + LSA-1024 (baseline) | 0.306 | 0.358 | 0.383 | 0.041 | 0.041 |
+| + whitened | 0.342 | 0.356 | 0.364 | -0.001 | -0.001 |
+| + key=separated | 0.291 | 0.356 | 0.399 | 0.041 | 0.134 |
+| + key=separated, whitened | 0.322 | 0.348 | 0.352 | -0.001 | 0.117 |
+
+**QMSum**
+
+| configuration | hit@1 | hit@5 | hit@10 | aniso_emb | aniso_key |
+|---|---|---|---|---|---|
+| now: + LSA-1024 (baseline) | 0.335 | 0.541 | 0.682 | 0.056 | 0.056 |
+| + whitened | 0.335 | 0.571 | 0.671 | 0.000 | 0.000 |
+| + key=separated | 0.294 | 0.535 | 0.659 | 0.056 | 0.143 |
+| + key=separated, whitened | 0.329 | 0.524 | 0.647 | 0.000 | 0.118 |
+
+Internal checks that confirm the harness is measuring what it claims, not
+just labelling rows:
+
+- `aniso_emb` depends only on `whiten`, not `key_mode` — the "+ key=separated"
+  row's `aniso_emb` (0.041 / 0.056) matches the unwhitened baseline exactly,
+  because pattern separation projects the *key*, not the stored embedding.
+- `aniso_key` equals `aniso_emb` whenever `key_mode=EMBEDDING` (the key *is*
+  the embedding there), and diverges only under `key_mode=SEPARATED`
+  (0.134/0.143 unwhitened, 0.117/0.118 whitened) — the DG expansion measurably
+  decorrelates the stored keys in both cases.
+- Note these anisotropy values are measured on `LatentSemanticEmbedder`
+  (LSA) vectors, not BGE. They should not be compared to the BGE reference
+  points in `cls_memory/whitening.py` (+0.649 shipped, -0.001 whitened) --
+  LSA's unwhitened anisotropy here (0.041-0.083) is already far lower than
+  BGE's, and whitening still drives it to ~0.000 in every row, confirming the
+  mechanism is genuinely being fitted and applied rather than silently
+  passed through (the exact failure mode `WhitenedEmbedder` warns about when
+  it is enabled but never bootstrapped).
+
+No conclusion is drawn here about whether whitening or separation *helps*
+retrieval on either corpus -- several of the deltas above (e.g. LoCoMo
+hit@1 0.306 -> 0.342 whitened) are within or close to this project's ~0.04
+resolution limit, and interpreting them is ticket 08's job, not this one's.
+
+Reproduce with:
+
+```bash
+PYTHONPATH=. uv run python experiments/recall_check.py
+PYTHONPATH=. uv run pytest tests/test_recall_check.py -p no:warnings
+```
 
 ---
 

@@ -68,6 +68,11 @@ def evaluate(
         embedder = raw_embedder
 
     hits = {k: 0 for k in KS}
+    # Per-question 0/1 outcomes, kept so arms can be compared with the exact
+    # paired McNemar test in experiments/metrics.py rather than by eyeballing
+    # two rates. At n=494 a difference below ~0.04 hit@1 is not resolvable, so
+    # the aggregate alone cannot say whether an arm actually moved anything.
+    per_question = {k: [] for k in KS}
     asked = 0
     embeddings_seen: list[Tensor] = []
     keys_seen: list[Tensor] = []
@@ -134,11 +139,13 @@ def evaluate(
             )
             ranked = [dia_of[r.record.id] for r in result.results]
             for k in KS:
-                if any(e in ranked[:k] for e in evidence):
-                    hits[k] += 1
+                hit = int(any(e in ranked[:k] for e in evidence))
+                hits[k] += hit
+                per_question[k].append(hit)
 
     out = {k: hits[k] / max(asked, 1) for k in KS}
     out["asked"] = asked
+    out["per_question"] = per_question
     # The measured quantity, not the requested one: anisotropy over the
     # embeddings and hippocampal keys this row actually wrote to the store,
     # not over "whiten" or "key_mode" as booleans. 0.0 is isotropic (see
@@ -152,13 +159,24 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--locomo", type=int, default=3)
     parser.add_argument("--qmsum", type=int, default=25)
+    # QMSum is ~10x LoCoMo's turn count (14431 vs 1451) and the LSA-1024 rows
+    # cost hours there, so the two corpora are separable at the command line.
+    # Running one at a time is a cost control, NOT a way to skip the
+    # overfitting guard -- a change is only supported when both agree, per
+    # this module's docstring.
+    parser.add_argument("--corpus", choices=("both", "locomo", "qmsum"),
+                        default="both")
     args = parser.parse_args()
     torch.manual_seed(SEED)
 
-    datasets = [
-        ("LoCoMo", locomo.load()[: args.locomo]),
-        ("QMSum", qmsum.load(max_meetings=args.qmsum)),
-    ]
+    datasets = []
+    if args.corpus in ("both", "locomo"):
+        datasets.append(("LoCoMo", locomo.load()[: args.locomo]))
+    if args.corpus in ("both", "qmsum"):
+        datasets.append(("QMSum", qmsum.load(max_meetings=args.qmsum)))
+    if args.corpus != "both":
+        print(f"!! single-corpus run ({args.corpus}); the both-corpora "
+              "overfitting guard is NOT in force for these numbers")
     for name, convs in datasets:
         print(f"{name}: {len(convs)} conversations, "
               f"{sum(len(c.turns) for c in convs)} turns")

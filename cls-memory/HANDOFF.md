@@ -104,11 +104,32 @@ docstrings with numbers):
 Measured on 3 LoCoMo conversations (1451 turns, 494 questions) and 6 QMSum
 meetings (3473 turns, 38 questions). Full tables in `RESULTS.md` Part III.
 
-| | recall@1 | recall@5 |
+| | hit@1 | hit@5 |
 |---|---|---|
-| LoCoMo, current defaults | **0.250** | 0.318 |
-| QMSum, current defaults | **0.395** | 0.632 |
-| LoCoMo, shipped defaults before the fixes | 0.004 | 0.012 |
+| LoCoMo, current defaults | **0.306** | 0.358 |
+| QMSum, current defaults (25 meetings, 170 q) | **0.335** | 0.541 |
+| LoCoMo, shipped defaults before the fixes | 0.002 | 0.010 |
+
+> **Corrected.** This table previously read LoCoMo 0.250/0.318 and QMSum
+> 0.395/0.632. Both were stale; re-measured by running the **unmodified**
+> `experiments/recall_check.py` at `HEAD` (verified byte-identical to
+> `git show HEAD:`), so this is what the harness on this branch actually
+> prints, not a re-derivation.
+>
+> **LoCoMo 0.250 → 0.306 is a like-for-like correction.** Same 3
+> conversations, same 494 questions. The move is explained by §3.1d
+> retraction 2 — removing `max_features=20_000` from the LSA fit — which
+> landed in `embeddings.py` but was never propagated to this table.
+>
+> **QMSum 0.395 → 0.335 is NOT like-for-like and must not be read as a
+> regression.** The old figure came from the 6-meeting / 38-question slice
+> (§4); the new one is 25 meetings and 170 questions. Different denominators,
+> so the two numbers are not comparable and the difference is unattributed.
+> Whether the `max_features` change helps or hurts QMSum is therefore **still
+> unknown** — and since that change was validated on LoCoMo alone, it has
+> never faced this project's own both-corpora overfitting rule. Re-running the
+> pre-cap-removal configuration on the 25-meeting slice would settle it; that
+> has not been done.
 
 **The pipeline is no longer the problem.** At β=128 with `key=EMBEDDING` the
 full pipeline scores 0.172@1 against its embedder's own plain-kNN ceiling of

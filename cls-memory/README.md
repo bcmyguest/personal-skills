@@ -33,7 +33,10 @@ consolidation moves knowledge from fast to slow, then releases the fast copy.
 ground-truth retrieval targets** — results in [RESULTS.md](RESULTS.md).
 
 > Read RESULTS.md Parts II and III before quoting any number from Part I.
-> On real data retrieval recall@1 is 0.251 (LoCoMo) and 0.395 (QMSum), against
+> On real data retrieval hit@1 is 0.306 (LoCoMo, 494 q) and 0.335 (QMSum, 25
+> meetings / 170 q) — both corrected, see HANDOFF.md §2; the QMSum figure is
+> not comparable to the 0.395 previously quoted, which came from a
+> 38-question slice — against
 > 1.000 on the synthetic corpus. Part III diagnoses and fixes a default that
 > collapsed retrieval entirely. Everything below
 labelled "measured" was measured in this repo, not assumed.
@@ -336,7 +339,8 @@ and blows the samples up by ~1300× (asserted in
 ## 9. Known limitations
 
 - **Retrieval is bounded by the embedder.** After the Part III fixes, recall@1
-  is 0.251 on LoCoMo and 0.395 on QMSum against 1.000 on synthetic data. Sparse
+  is 0.306 on LoCoMo and 0.335 on QMSum (corrected — HANDOFF.md §2) against
+1.000 on synthetic data. Sparse
   TF-IDF still beats the best dense configuration on its own ceiling (0.320 vs
   0.255), so a sparse-shortlist hybrid is the obvious unimplemented next step.
   Swap in a sentence encoder for real use.

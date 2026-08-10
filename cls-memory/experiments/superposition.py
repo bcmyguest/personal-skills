@@ -23,6 +23,11 @@ database are about representation, not ranking:
 
   PART 3  What that buys in the only currency that matters -- tokens.
 
+  PART 4  Whitening as a RANKER, not a substrate -- RESULTS.md V.5/VI.3.
+          Helps hit@1 (inside this project's ~0.04 resolution limit) and
+          costs depth. Added here (review ticket 06) because those sections
+          previously had no reproducible source in this file at all.
+
 Part 2 is the real experiment. A sum of k near-orthogonal unit vectors retains
 each component at cosine ~1/sqrt(k), so recovery degrades smoothly rather than
 falling off a cliff; where it breaks depends on how correlated the stored items
@@ -40,9 +45,9 @@ import torch
 
 from cls_memory import HopfieldConfig, ModernHopfieldNetwork
 from cls_memory.config import WhiteningConfig
-from cls_memory.whitening import Whitener, anisotropy
+from cls_memory.whitening import Whitener, WhitenedEmbedder, anisotropy
 from experiments import locomo
-from experiments.recall_ablation import BGEEmbedder
+from experiments.recall_ablation import BGEEmbedder, dense_knn_ranker, score_ranking
 from experiments.rulebook import RULES
 
 
@@ -380,6 +385,60 @@ def part3_budget(embedder) -> None:
     print("  is what bounds how far it can be pushed.")
 
 
+# ---------------------------------------------------------------------------
+# Part 4: whitening as a RANKER (RESULTS.md V.5 / VI.3), not a substrate
+
+
+def part4_ranking(embedder) -> None:
+    """Reproduce RESULTS.md V.5 and VI.3: does whitening help retrieval?
+
+    Review ticket 06: V.5 and VI.3 report LoCoMo turn-retrieval hit@k with and
+    without whitening, but neither number had a reproducible source in this
+    file -- Part 2 above only ever measured capacity (decoding a superposed
+    state), never ranking. `dense_knn_ranker`/`score_ranking`
+    (`experiments/recall_ablation.py`) are the ranking harness V.5/VI.3 were
+    actually measured with; `WhitenedEmbedder` (`cls_memory.whitening`) is the
+    library wrapper, not a private duplicate.
+
+    Same 3 conversations, n=494 as V.5/VI.3. Two fits are reported, continuing
+    review ticket 04's discipline:
+
+      * **in-sample fit** -- the whitener fit on the SAME 1451 turns being
+        ranked. This is what VI.3's "fitted once on 1451 turns" row measured;
+        it is not transductive in the query direction (queries are held-out
+        question text, never stored turns) but the *documents* it is scored
+        against are exactly what it was fit on.
+      * **held-out fit** -- fit on a disjoint pool of turns from the other 7
+        LoCoMo conversations, applied unchanged to the 3 scored ones. The
+        honest number for a deployment that fits once on historical traffic
+        and then encodes conversations it has never seen.
+    """
+    print("\n" + "=" * 78)
+    print("PART 4 -- whitening as a RANKER (RESULTS.md V.5 / VI.3), not a substrate")
+    print("=" * 78)
+
+    conversations = locomo.load()
+    scored = conversations[:3]
+    scored_corpus = [t.memory_text for c in scored for t in c.turns]
+    fit_pool = [t.memory_text for c in conversations[3:] for t in c.turns]
+    n_asked = sum(
+        1 for c in scored for q in c.questions
+        if {e for e in q.evidence if e in {t.dia_id for t in c.turns}}
+    )
+    print(f"  {len(scored)} conversations, {len(scored_corpus)} turns, "
+          f"{n_asked} questions with in-corpus evidence\n")
+
+    score_ranking(scored, lambda c: dense_knn_ranker(c, embedder), "BGE as shipped")
+
+    in_sample = WhitenedEmbedder(embedder).fit(scored_corpus)
+    score_ranking(scored, lambda c: dense_knn_ranker(c, in_sample),
+                  "whitened, in-sample fit (on the 1451 scored turns)")
+
+    held_out = WhitenedEmbedder(embedder).fit(fit_pool)
+    score_ranking(scored, lambda c: dense_knn_ranker(c, held_out),
+                  f"whitened, held-out fit (on {len(fit_pool)} turns, other 7 convs)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trials", type=int, default=200)
@@ -390,6 +449,7 @@ def main() -> None:
     part1_identity(embedder)
     part2_capacity(embedder, args.trials)
     part3_budget(embedder)
+    part4_ranking(embedder)
 
 
 if __name__ == "__main__":
