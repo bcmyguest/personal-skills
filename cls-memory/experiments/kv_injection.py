@@ -184,31 +184,53 @@ def anisotropy_by_layer(memories: list[KV]) -> list[float]:
     return out
 
 
-def build_arms(inj: Injector, memories: dict[str, KV], k: int, pools: list[int]) -> dict:
+def choose_k(situation, all_ids: list[str], k: int) -> list[str]:
+    """k rule ids containing the situation's gold, so a superposed mixture is a
+    fair test of capacity (gold is always present, never crowded out by luck).
+
+    Pulled out of `build_arms` so ticket 13's learned-read-in harness can drive
+    the same k-selection when it trains and evaluates against `kv_super_k`'s
+    exact mixtures, instead of re-deriving this rule and risking drift.
+    """
+    chosen = list(situation.gold)
+    for rid in all_ids:
+        if len(chosen) >= k:
+            break
+        if rid not in chosen:
+            chosen.append(rid)
+    return chosen
+
+
+def build_arms(
+    inj: Injector,
+    memories: dict[str, KV],
+    k: int,
+    pools: list[int],
+    rules: list | None = None,
+) -> dict:
     """name -> (memory for a situation, prompt-token cost).
 
     `text` and `kv_full` are deliberately the *same token sequence*, split
     differently: one supplies the rules as prompt, the other prefills them and
     withholds the tokens. Any gap between them is the price of the mechanism.
+
+    `rules` defaults to the full `rulebook.RULES` (unchanged behaviour for
+    every existing caller). It exists so a smoke-scale caller -- ticket 13's
+    learned-read-in harness -- can pass a small, self-consistent subset and
+    get a fast, comparable curve instead of Part VII's full ~4-minute run.
     """
-    rules = rulebook.RULES
+    rules = rules if rules is not None else rulebook.RULES
     all_ids = [r.rule_id for r in rules]
-    full_kv = inj.prefill(rulebook_text())
+    text = rulebook_text(rules)
+    full_kv = inj.prefill(text)
     super_all = superpose([memories[i] for i in all_ids])
 
     def super_k(situation) -> KV:
-        """k rules containing the gold, so the mixture is a fair test of capacity."""
-        chosen = list(situation.gold)
-        for rid in all_ids:
-            if len(chosen) >= k:
-                break
-            if rid not in chosen:
-                chosen.append(rid)
-        return superpose([memories[i] for i in chosen])
+        return superpose([memories[i] for i in choose_k(situation, all_ids, k)])
 
     arms: dict = {
         "none": (lambda s: None, 0),
-        "text": (lambda s: None, inj.tokens(rulebook_text()).shape[1]),
+        "text": (lambda s: None, inj.tokens(text).shape[1]),
         "kv_full": (lambda s: full_kv, 0),
     }
     for n in pools:
@@ -221,8 +243,47 @@ def build_arms(inj: Injector, memories: dict[str, KV], k: int, pools: list[int])
     return arms
 
 
-def rulebook_text() -> str:
-    return "\n".join(r.text for r in rulebook.RULES) + "\n"
+def rulebook_text(rules: list | None = None) -> str:
+    """`rules` defaults to the full `rulebook.RULES` -- see `build_arms`."""
+    rules = rules if rules is not None else rulebook.RULES
+    return "\n".join(r.text for r in rules) + "\n"
+
+
+def score_arm(
+    inj: Injector,
+    by_id: dict,
+    situations: list,
+    name: str,
+    memory_of,
+    prompt_cost: int,
+    full_text: str,
+) -> dict:
+    """Recitation NLL + forced choice for one arm -- Part VII's metric, exactly
+    the loop `main` below runs, pulled out so ticket 13's learned-read-in
+    harness can score its own arms with the identical code path instead of a
+    reimplementation that could silently drift from the published numbers.
+    """
+    scored = [s for s in situations if s.traps]
+    nlls, correct, margins = [], 0, []
+    for situation in situations:
+        memory = memory_of(situation)
+        prompt = PROMPT.format(q=situation.question)
+        if name == "text":
+            prompt = full_text + prompt
+        gold_nll = inj.nll(prompt, by_id[situation.gold[0]].text, memory)
+        nlls.append(gold_nll)
+        traps = [inj.nll(prompt, by_id[t].text, memory) for t in situation.traps]
+        if traps:
+            correct += int(gold_nll < min(traps))
+            margins.append(min(traps) - gold_nll)
+    probe = memory_of(situations[0])
+    return {
+        "recite_nll": sum(nlls) / len(nlls),
+        "forced_choice": correct / len(scored) if scored else float("nan"),
+        "margin": sum(margins) / len(margins) if margins else float("nan"),
+        "prompt_tokens": prompt_cost,
+        "slots": probe.slots if probe is not None else prompt_cost,
+    }
 
 
 def main() -> None:
@@ -261,26 +322,14 @@ def main() -> None:
     arms = build_arms(inj, memories, args.k, pools)
     results: dict[str, dict] = {}
     for name, (memory_of, prompt_cost) in arms.items():
-        nlls, correct, margins = [], 0, []
-        for situation in rulebook.SITUATIONS:
-            memory = memory_of(situation)
-            prompt = PROMPT.format(q=situation.question)
-            if name == "text":
-                prompt = full_text + prompt
-            gold_nll = inj.nll(prompt, by_id[situation.gold[0]].text, memory)
-            nlls.append(gold_nll)
-            traps = [inj.nll(prompt, by_id[t].text, memory) for t in situation.traps]
-            if traps:
-                correct += int(gold_nll < min(traps))
-                margins.append(min(traps) - gold_nll)
-        probe = memory_of(rulebook.SITUATIONS[0])
-        results[name.strip()] = {
-            "recite_nll": sum(nlls) / len(nlls),
-            "forced_choice": correct / len(scored),
-            "margin": sum(margins) / len(margins),
-            "prompt_tokens": prompt_cost,
-            "slots": probe.slots if probe is not None else prompt_cost,
-        }
+        # Scored through `score_arm`, which is this loop, extracted. Ticket 13's
+        # learned-read-in harness scores its arms with the same function, and
+        # that is only worth anything if `main` -- the thing that produced the
+        # published Part VII numbers -- goes through it too. Two copies of a
+        # metric are two metrics.
+        results[name.strip()] = score_arm(
+            inj, by_id, rulebook.SITUATIONS, name, memory_of, prompt_cost, full_text
+        )
         r = results[name.strip()]
         print(
             f"  {name:<14} {r['recite_nll']:7.3f} {r['forced_choice']:6.3f} "

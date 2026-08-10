@@ -600,3 +600,64 @@ reported success while returning wrong answers: `converged=True` on a collapsed
 attractor, `improved=True` while training on 1e6-magnitude garbage, and
 `load_state_dict` restoring zero padding as memories that took 100% of the
 attention mass. Prefer probes that check *values*, not shapes and exit codes.
+
+## 6. Review tickets 09-13: the Hopfield layer measured against its baselines
+
+All thirteen review tickets are now implemented. Tickets 01-08 improved the
+harness; 09-13 asked the question those improvements made answerable — **does the
+attractor layer do anything cosine kNN does not?** Full detail in RESULTS.md
+Part VIII; the operational summary is here.
+
+**The answer is no, on both corpora, in every test that has a baseline.** Retrieval
+ties at hit@1 and loses 0.10-0.17 below it (VIII.1). Pattern completion loses to a
+one-shot lookup on the identical degraded cue in 45 of 48 cells (VIII.2). Gist
+recall loses to a plain unweighted average of the same neighbours (VIII.3). A
+learned read-in memorises 12 situations and generalises worse than not training at
+all (VIII.5).
+
+**Every gain this project has ever measured belongs to the embedding, not the
+dynamics** — dimension, whitening, an honest IDF, and fixing defects. Whitening is
+still the one lever that survives a powered test (+0.036 hit@1 on LoCoMo,
+p=0.0001), and it lifts the cosine ceiling by the same amount it lifts the
+Hopfield arm.
+
+### What a future session should know before re-opening any of this
+
+- **Pin the thread count.** `--threads` defaults to 6 on every DG-bearing harness.
+  DG/SEPARATED numbers are not reproducible across thread counts (VIII.0 defect 2)
+  and a published DG figure without its thread count cannot be checked by anyone.
+- **The one unexplored positive is in VIII.4.** At beta=8 the energy decorrelates
+  from cosine (rho 0.999 -> 0.29) and four signals survive Bonferroni in the full
+  system, the largest +0.069 AUC. Note the corroboration split: the B-baseline
+  effect (+0.063) is backed out-of-fold (+0.022) while the larger B-whitened one
+  (+0.069) is not (-0.003). Chase the corroborated one. But beta=8 is where retrieval collapses (hit@1 0.004). The untested
+  idea this suggests: **settle at beta=8 to decide *whether* to answer and at
+  beta=128 to decide *what* to answer.** Abstention and retrieval are separate
+  reads and nothing forces them to share a temperature. That is a design proposal,
+  not a result — Protocol B also carries an uncontrolled question-length confound
+  (AUC 0.421), and it is not comparable to IV.1 by construction.
+- **Two completion cells are positive on both corpora** (+0.005 LoCoMo, +0.011
+  QMSum), in the same sparse-key/active-units/5%-kept cell — the exact regime the
+  original synthetic claim was made in. (A third, +0.001 on QMSum dense coords at
+  50% kept, is a single question at n=1000 and is noise.) Inside the noise floor, no paired
+  significance test available. A reason to measure again, not a result.
+- **The embedder is still LSA-1024.** Every negative result above is a negative
+  result *against a weak embedder*. BGE-small is now in the local HF cache and
+  Protocol A already drives it. Re-running VIII.1 on real sentence embeddings is
+  the single highest-value follow-up, because it is the one thing that could
+  change the verdict rather than confirm it.
+- **Do not report a diverged optimisation as a mechanism failure.** VIII.5's first
+  run used lr=0.1 and diverged; the diverged log is kept in
+  `experiments/results/kv_learned_readin_t6.log` as the record. Learning rate was
+  re-selected on **training loss only** — selecting it on the held-out metric would
+  be tuning on the test set.
+
+### Trap added by this round
+
+**A baseline is not optional, and its absence is invisible.** Section 4's
+completion result was not wrong — those occlusion numbers reproduce on real data,
+and in the sparse-key protocol they are *better* than the synthetic ones. It was
+unfalsifiable, because nothing was measured alongside it. Three of this project's
+headline claims survived for months purely because the obvious control was never
+run. When a mechanism "works", the question is not "what did it score" but "what
+did the dumbest possible alternative score on exactly the same inputs".

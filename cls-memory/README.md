@@ -44,6 +44,29 @@ labelled "measured" was measured in this repo, not assumed.
 The package has been through an adversarial review; the defects it found and
 the fixes are in §11.
 
+> **RESULTS.md Part VIII is the current verdict on the Hopfield layer itself.**
+> Review tickets 09-13 measured the three headline claims against the baseline
+> each of them was missing — cosine kNN over the same vectors, a dynamics-free
+> centroid, and a single-shot lookup on identical degraded cues:
+>
+> - **Retrieval**: the layer ties cosine at hit@1 on both corpora and loses
+>   0.10-0.17 below it, at every separation configuration including the one that
+>   satisfies the capacity precondition (VIII.1).
+> - **Pattern completion**: reproduces on real data, but a one-shot cosine lookup
+>   on the same degraded cue does as well or better in 45 of 48 cells (VIII.2).
+> - **Schema absorption**: measured for the first time, and gist recall never
+>   beats a plain average of the same neighbours at any temperature (VIII.3).
+> - **Energy / abstention**: Part IV's "adds nothing" is narrowed — it was measured
+>   where the energy is a monotone relabelling of cosine (rho 0.999). At low beta
+>   it decorrelates and shows a positive effect, which survives correction in the
+>   full system but not in Part IV's own protocol (VIII.4).
+> - **Compression**: a learned read-in trains to NLL 0.003 on its training
+>   situations and generalises *worse than not training at all* (VIII.5).
+>
+> Part VIII also records three defects found while measuring, one of which
+> (softmax underflow) had been silently ranking retrieval results by insertion
+> order at high beta.
+
 **The real-embedding tests need an optional runtime.** `tests/test_superposition.py`
 holds RESULTS.md Part V's claims in place by running real BGE-small-v1.5
 embeddings through `experiments/recall_ablation.py`'s `BGEEmbedder`, which

@@ -1,0 +1,104 @@
+{
+  "asked": 165,
+  "centroid_diag": {
+    "2.0": {
+      "coverage": NaN,
+      "diag_n": 165,
+      "effective_n": 505.3690820671162,
+      "full_recall": NaN,
+      "mixture_rate": 1.0,
+      "n": 0,
+      "top1": 0.008306148126156944
+    },
+    "32.0": {
+      "coverage": NaN,
+      "diag_n": 165,
+      "effective_n": 3.861694178858624,
+      "full_recall": NaN,
+      "mixture_rate": 0.47878787878787876,
+      "n": 0,
+      "top1": 0.5381403426780845
+    },
+    "8.0": {
+      "coverage": NaN,
+      "diag_n": 165,
+      "effective_n": 201.7421756402148,
+      "full_recall": NaN,
+      "mixture_rate": 1.0,
+      "n": 0,
+      "top1": 0.09257254874841733
+    },
+    "factor=0.15": {
+      "coverage": NaN,
+      "diag_n": 165,
+      "effective_n": 8.802107735765183,
+      "full_recall": NaN,
+      "mixture_rate": 0.8181818181818182,
+      "n": 0,
+      "top1": 0.3860807303903681
+    }
+  },
+  "centroid_task": {
+    "coverage": 0.07028676895644115,
+    "diag_n": 0,
+    "effective_n": NaN,
+    "full_recall": 0.006060606060606061,
+    "mixture_rate": NaN,
+    "n": 165,
+    "top1": NaN
+  },
+  "gist": {
+    "2.0": {
+      "coverage": 0.01690144594004442,
+      "diag_n": 165,
+      "effective_n": 521.5139400546805,
+      "full_recall": 0.0,
+      "mixture_rate": 1.0,
+      "n": 165,
+      "top1": 0.003587876513219354
+    },
+    "32.0": {
+      "coverage": 0.06366575345694596,
+      "diag_n": 165,
+      "effective_n": 1.8195557318372921,
+      "full_recall": 0.0,
+      "mixture_rate": 0.07878787878787878,
+      "n": 165,
+      "top1": 0.9349722691557624
+    },
+    "8.0": {
+      "coverage": 0.01716860006531716,
+      "diag_n": 165,
+      "effective_n": 191.3674119557182,
+      "full_recall": 0.0,
+      "mixture_rate": 1.0,
+      "n": 165,
+      "top1": 0.02231331038796766
+    },
+    "factor=0.15": {
+      "coverage": 0.04320584550714824,
+      "diag_n": 165,
+      "effective_n": 19.033853620432385,
+      "full_recall": 0.0,
+      "mixture_rate": 0.45454545454545453,
+      "n": 165,
+      "top1": 0.5751531660443906
+    }
+  },
+  "labels": [
+    "2.0",
+    "8.0",
+    "32.0",
+    "factor=0.15"
+  ],
+  "recall": {
+    "coverage": 0.06802895568580451,
+    "diag_n": 165,
+    "effective_n": 1.0594831124534037,
+    "full_recall": 0.0,
+    "mixture_rate": 0.012121212121212121,
+    "n": 165,
+    "top1": 0.9899758373246048
+  },
+  "threads": 6
+}

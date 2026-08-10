@@ -40,6 +40,7 @@ from cls_memory import (
 )
 from cls_memory.whitening import WhitenedEmbedder, anisotropy
 from experiments import locomo, qmsum
+from experiments.threads import add_threads_arg, pin_threads
 
 SEED = 0
 KS = (1, 5, 10)
@@ -166,7 +167,9 @@ def main() -> None:
     # this module's docstring.
     parser.add_argument("--corpus", choices=("both", "locomo", "qmsum"),
                         default="both")
+    add_threads_arg(parser)
     args = parser.parse_args()
+    threads = pin_threads(args.threads)
     torch.manual_seed(SEED)
 
     datasets = []
@@ -177,6 +180,7 @@ def main() -> None:
     if args.corpus != "both":
         print(f"!! single-corpus run ({args.corpus}); the both-corpora "
               "overfitting guard is NOT in force for these numbers")
+    print(f"torch threads: {threads}")
     for name, convs in datasets:
         print(f"{name}: {len(convs)} conversations, "
               f"{sum(len(c.turns) for c in convs)} turns")

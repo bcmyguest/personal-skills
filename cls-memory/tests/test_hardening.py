@@ -29,6 +29,7 @@ from cls_memory import (
     Persistence,
 )
 from cls_memory.hippocampus import ModernHopfieldNetwork
+from cls_memory.records import utcnow
 from tests.test_memory_system import CORPUS, make_system
 
 
@@ -456,3 +457,73 @@ def test_assert_consistent_catches_a_scrambled_index():
     store._index[records[0].id] = 2  # right cardinality, wrong values
     with pytest.raises(RuntimeError, match="index points"):
         store.assert_consistent()
+
+
+def test_ranking_survives_softmax_underflow_at_high_beta():
+    """Ranks below the first must be ordered by similarity, not by insertion.
+
+    `_settle` used to rank with `torch.topk(trace.weights, k)`. The weights are
+    softmax(logits), so in exact arithmetic that is the right ordering -- but
+    in float32 an entry below ~1e-38 flushes to exactly 0.0, and at the shipped
+    default of beta=128 that is nearly the whole store. `topk` then broke the
+    resulting tie by storage order, so everything below rank 1 came back in the
+    order it happened to be written.
+
+    The underflow is driven by how far apart the *patterns* are, not by how
+    close the cue is: once the state settles onto one of them, every other
+    pattern sits a full cosine unit away, and beta * 0.9 is comfortably past
+    the float32 floor. So the fixture uses near-orthogonal random patterns --
+    the ordinary case for real embeddings, and the case measured on LoCoMo,
+    where every question's top-10 was affected.
+
+    Stored in ascending similarity to the cue, so an index-order tie-break
+    returns very nearly the reverse of the right answer and cannot pass by
+    luck. The oracle is cosine to the settled state, computed here rather than
+    read from `logits`, so this pins the ordering the read path owes its caller
+    rather than restating its implementation.
+    """
+    torch.manual_seed(0)
+    # dim matches make_system's cortex input width; keys are written directly.
+    dim, n = 64, 24
+    patterns = torch.randn(n, dim)
+    patterns = patterns / patterns.norm(dim=-1, keepdim=True)
+
+    # A noisy version of one pattern, so there is an unambiguous winner.
+    cue = patterns[7] + 0.6 * torch.randn(dim)
+    cue = cue / cue.norm()
+    # Ascending similarity to the cue: insertion order is the reverse answer.
+    patterns = patterns[(patterns @ cue).argsort()]
+
+    system = make_system(hopfield=HopfieldConfig(beta=128.0))
+    now = utcnow()
+    for i, p in enumerate(patterns):
+        system.store.add(
+            MemoryRecord(
+                text=f"pattern {i}",
+                embedding=p,
+                latent=system.cortex.latent(p),
+                key=p,
+                persistence=Persistence.TEMPORAL,
+                created_at=now,
+                last_reinforced_at=now,
+            ),
+            now=now,
+        )
+
+    mhn = system.store.mhn
+    trace = mhn.retrieve(cue, beta=128.0)
+    # The premise of the bug: the softmax must have underflowed far enough to
+    # reach into the top-10, or the old ranking would have been correct anyway.
+    assert int((trace.weights == 0.0).sum()) > n - 10
+
+    result = system.retrieval._settle(
+        cue, mask=None, beta=128.0, top_k=10, query=None,
+        reinforce=False, now=now,
+    )
+    returned = [r.record.text for r in result.results]
+    truth = trace.state @ mhn.patterns.T
+    expected = [f"pattern {int(i)}" for i in torch.topk(truth, 10).indices]
+    assert returned == expected
+    # Similarity must be non-increasing down the returned list.
+    sims = [r.similarity for r in result.results]
+    assert sims == sorted(sims, reverse=True)

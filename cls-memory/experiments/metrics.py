@@ -8,6 +8,24 @@ import torch
 from torch import Tensor
 
 
+def average_ranks(x: Tensor) -> Tensor:
+    """Ascending ranks 1..n, averaged within tied groups.
+
+    Shared by `roc_auc` and `spearman_rho`; both are rank statistics and both
+    are wrong on tied inputs without the tie averaging. Ties are not exotic
+    here -- a hit/miss indicator vector is nothing but ties.
+    """
+    v = x.reshape(-1).double()
+    order = v.argsort()
+    ranks = torch.empty_like(v)
+    ranks[order] = torch.arange(1, v.numel() + 1, dtype=torch.double)
+    unique, inverse, counts = v.unique(return_inverse=True, return_counts=True)
+    if v.numel() and int(counts.max()) > 1:
+        summed = torch.zeros_like(unique).scatter_add_(0, inverse, ranks)
+        ranks = (summed / counts)[inverse]
+    return ranks
+
+
 def roc_auc(positive: Tensor, negative: Tensor) -> float:
     """Area under the ROC curve via the Mann-Whitney U statistic.
 
@@ -21,17 +39,8 @@ def roc_auc(positive: Tensor, negative: Tensor) -> float:
         return float("nan")
 
     combined = torch.cat([pos, neg])
-    order = combined.argsort()
-    ranks = torch.empty_like(combined)
-    ranks[order] = torch.arange(1, combined.numel() + 1, dtype=torch.double)
-
     # Average ranks within tied groups so ties contribute 0.5.
-    unique, inverse, counts = combined.unique(
-        return_inverse=True, return_counts=True
-    )
-    if int(counts.max()) > 1:
-        summed = torch.zeros_like(unique).scatter_add_(0, inverse, ranks)
-        ranks = (summed / counts)[inverse]
+    ranks = average_ranks(combined)
 
     rank_sum = ranks[:n_pos].sum()
     return float((rank_sum - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
@@ -64,6 +73,35 @@ def classification(predicted: list[bool], actual: list[bool]) -> ClassificationR
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     return ClassificationReport(precision, recall, f1, tp, fp, fn, tn)
+
+
+def spearman_rho(a: Tensor, b: Tensor) -> float:
+    """Spearman rank correlation, tie-corrected. NaN if either side is constant.
+
+    Used by the separation x inverse-temperature sweep (ticket 09) to ask
+    whether the Hopfield ranking is a relabelling of cosine similarity. rho of
+    exactly 1.0 means the attractor dynamics reordered nothing and the layer is
+    cosine kNN wearing a hat; the interesting regime is rho meaningfully below
+    1.0 *with* recall still competitive.
+
+    A constant input has no ranking to correlate, so the correlation is
+    undefined rather than zero -- returning 0.0 there would read as "measured,
+    no relationship" and quietly enter a mean.
+    """
+    x = a.reshape(-1).double()
+    y = b.reshape(-1).double()
+    if x.numel() != y.numel():
+        raise ValueError("spearman needs equal-length inputs")
+    if x.numel() < 2:
+        return float("nan")
+    rx = average_ranks(x)
+    ry = average_ranks(y)
+    rx = rx - rx.mean()
+    ry = ry - ry.mean()
+    denom = float(rx.norm() * ry.norm())
+    if denom < 1e-12:
+        return float("nan")
+    return float((rx @ ry) / denom)
 
 
 def mcnemar_exact(baseline: list[int], candidate: list[int]) -> dict:

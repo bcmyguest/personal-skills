@@ -121,6 +121,12 @@ weak test, since most coordinates are zero anyway — so both protocols are run:
 | 0.10 | 1.000 | 26 | 0.323 | 5.6 |
 | 0.05 | 0.775 | 13 | 0.229 | 7.8 |
 
+> **Corrected by VIII.2 (ticket 10).** These occlusion numbers reproduce on real
+> data — but they were measured with no baseline. A single-shot cosine lookup on
+> the *identical* degraded cues does as well or better in 45 of 48 real-data
+> cells. The robustness stands; the implication that it demonstrates an advantage
+> of iterative settling is withdrawn.
+
 Perfect completion from 26 of 205 active units (cue cosine 0.323), breaking
 down only at 13 units. Known coordinates stayed exactly clamped in every run,
 and iteration count rises as the cue degrades — the network is doing more work
@@ -1061,6 +1067,29 @@ Mean rule = 36 real tokens.
 | 10 | 360 tokens | 1 slot | 360x |
 | 100 | 3600 tokens | 1 slot | 3600x |
 
+> **Corrected by VIII.5 (ticket 13).** These ratios price a slot count, not a
+> working memory, and they were framed as a *capacity* result. Two corrections.
+> (a) **The ratio the measurement supports is not usable capacity.** At 26 rules in
+> one slot (610x measured) the memory scores NLL 3.625 against a no-memory
+> baseline's 3.612 — indistinguishable from supplying nothing. A learned read-in
+> lifts that only on situations it trained on, and generalises *worse* than
+> untrained (VIII.5). The honest cost table is below.
+> (b) **This was never a Hopfield capacity claim.** Modern-Hopfield capacity
+> (Ramsauer et al. 2021, arXiv:2008.02217) governs storing N patterns as N rows and
+> retrieving *one* — `step`/`retrieve`. Summing N into one vector and reading
+> several back is `superpose`/`decode`, governed by the vector-symbolic /
+> holographic-reduced-representation literature (Plate, *Holographic Reduced
+> Representations*, IEEE Transactions on Neural Networks, 1995), whose crosstalk
+> bound is far below what these ratios imply and requires near-orthogonal codes —
+> which is what V.2's whitening result rediscovered empirically.
+>
+> | rules in 1 slot | token ratio | recitation NLL | vs no memory (3.612) |
+> |---|---|---|---|
+> | 26 (`kv_super_all`) | 610x | 3.625 | **no better than nothing** |
+> | 26 (`kv_learned_all`, held out) | 610x | 5.126 | **worse than nothing** |
+>
+> The token ratio is real. What it buys, at one slot, is not.
+
 Text injection is linear in rule count. A superposed state is one slot,
 bounded by V.2's capacity rather than by the prompt.
 
@@ -1086,7 +1115,7 @@ decision the system currently does not expose.
 |---|---|
 | memory as K/V inside attention | **proved exactly** (0.00e+00); end-to-end demo blocked — HuggingFace is 403 by proxy policy, so no decoder LM is reachable here |
 | N rules → one vector | **holds, after whitening**: 8 lossless, 16 at 97%, 32 at 89% — but only without settling |
-| schema absorption (CLS) | not yet tested |
+| schema absorption (CLS) | **tested, negative** — gist recall never beats a dynamics-free centroid of the same neighbours, on either corpus, at any temperature; see VIII.3 |
 
 ---
 
@@ -1306,3 +1335,525 @@ Part VII — the end-to-end K/V demo this table records as blocked, run against 
 real decoder LM now that HuggingFace is reachable — is in
 [`RESULTS-PART-VII.md`](RESULTS-PART-VII.md). It confirms the zero-context-token
 claim exactly and retracts V.4's compression ratio.
+
+---
+
+# Part VIII — Do the attractor dynamics earn their keep? (review tickets 09–13)
+
+Parts III–VI improved retrieval and tightened the harness, but every gain they
+found belonged to the *embedding* — dimension, whitening, an honest IDF. None
+of it was attributable to the Hopfield layer itself. Tickets 09–13 ask the
+question that leaves directly: **is there anything the attractor dynamics do
+that a cosine nearest-neighbour lookup over the same vectors does not?**
+
+Five experiments, each with the baseline the original claim never had. Every
+number below is measured at a pinned CPU thread count (see VIII.0, defect 2)
+and stated with the resolution limit that applies to it.
+
+## VIII.0 Three defects found while building these harnesses
+
+These were found *while* measuring tickets 09–13 and each one invalidates
+numbers published earlier, so they are recorded before the results that depend
+on them.
+
+### Defect 1 — softmax underflow silently ranked by insertion order
+
+`PatternCompleter._settle` ranked candidates with
+`torch.topk(trace.weights, k)`. In float32 a softmax entry below ~1e-38 flushes
+to exactly 0.0, so at high inverse temperature most of the store ties at
+exactly zero and `topk` fell back to **insertion order** for every rank below
+the first. The retrieval "ranking" past position 1 was, in those cells, the
+order the memories happened to be written in.
+
+Fixed by ranking on `mhn.logits(trace.state, beta)` — identical ordering in
+exact arithmetic, no underflow. Regression test
+`test_ranking_survives_softmax_underflow_at_high_beta` in
+`tests/test_hardening.py`, **verified to fail on the pre-fix code**; a test
+that only passes after the fix would prove nothing here.
+
+Measured cost of the bug (LoCoMo n=494, QMSum n=170):
+
+| corpus | beta | questions affected | hit@10 before | after |
+|---|---|---|---|---|
+| LoCoMo | 128 | 85.4% | 0.383 | 0.439 |
+| LoCoMo | 512 | 100% | 0.324 | 0.451 |
+| QMSum | 512 | — | 0.371 | 0.676 |
+
+**hit@1 is unchanged at every beta on both corpora** — the maximum weight never
+tied, so only the ranking below the top was ever affected. That is why the bug
+survived this long: every headline number in this project is a hit@1.
+
+### Defect 2 — DG/SEPARATED numbers depended on the CPU thread count
+
+The dentate-gyrus key thresholds on `h.topk(sparsity_k).values[..., -1:]`. A
+unit sitting within float noise of that cut flips in or out when the matmul
+reduction order changes — and the reduction order changes with the intra-op
+thread count. The key itself was a function of how many cores torch happened to
+grab.
+
+Exact reproduction, LoCoMo 3 conversations, dim=1024, key=SEPARATED, beta=128:
+
+| threads | hit@1 | hit@5 | hit@10 |
+|---|---|---|---|
+| 6 | 0.2976 | 0.3623 | 0.3988 |
+| 8 | 0.2895 | 0.3502 | 0.4008 |
+
+Deterministic at a fixed thread count, not portable across them. The spread
+(0.008 at hit@1, n=494) sits inside this project's ~0.04 resolution limit, so it
+overturns no conclusion — but without a pinned count **no third party can
+reproduce a published DG number at all.**
+
+The prediction that makes this a diagnosis rather than a story: both EMBEDDING
+arms have no top-k selection, so every *settled* cell in them should be
+**immune**. Re-running ticket 09's full grid at 6 threads against the earlier
+32-thread run, on both corpora:
+
+| arm | key | LoCoMo cells moved | QMSum cells moved |
+|---|---|---|---|
+| baseline | EMBEDDING | **0 — bit-identical** | 1 (see below) |
+| whitened | EMBEDDING | **0 — bit-identical** | **0 — bit-identical** |
+| DG (neg control) | SEPARATED | 10 | 16 |
+| both | SEPARATED | 12 | 17 |
+
+The prediction holds for all 40 settled EMBEDDING cells across both corpora. The
+single QMSum exception is not a settled cell at all: it is the **cosine ceiling**
+row, hit@10 0.8176 -> 0.8235, which is exactly one question of 170 changing
+places at the rank-10 boundary.
+
+That exception is worth stating rather than rounding away, because it narrows the
+claim. Float reduction order can flip *any* ranking whose members are within
+noise of each other, including plain cosine's -- it is not a DG-specific
+phenomenon. What is DG-specific is the magnitude and the mechanism: the top-k
+threshold changes the stored **key itself**, which is why the SEPARATED arms move
+in 10-17 cells rather than one, and why they move at hit@1 where the cosine
+ceiling does not.
+Fixed by pinning, not by changing the library: `experiments/threads.py` adds a
+`--threads` flag (default 6) to every DG-bearing harness, calls
+`torch.set_num_threads()`, and records `torch.get_num_threads()` — the count
+actually in force, not the one requested — in every log and JSON. `cls_memory`
+itself is unchanged; a caller who wants reproducible DG keys is the one who has
+to pin. `tests/test_threads.py` guards both the mechanism and the wiring.
+
+### Defect 3 — a JSON crash lost a completed arm
+
+`separation_beta_sweep._jsonable` emitted cells keyed by both `int` and `str`,
+and `json.dumps(sort_keys=True)` raised `TypeError` after the first arm, killing
+a 532-second LoCoMo run that had already computed a full arm's results. Fixed by
+stringifying cell keys in `_cell_json`; the harness now writes after **every**
+arm so a long run is recoverable.
+
+## VIII.1 Separation × inverse temperature — the decisive grid (ticket 09)
+
+The project's central hypothesis, stated so it can fail: *with separation raised
+by whitening and pattern separation, does the Hopfield layer diverge from cosine
+nearest-neighbour retrieval at a moderate inverse temperature — the regime where
+the two are provably distinct — or does the tie survive even when the capacity
+results' precondition is satisfied?*
+
+Four separation arms × five betas, both corpora, with cosine kNN over the *same*
+stored vectors as the ceiling in every cell. `experiments/separation_beta_sweep.py`.
+
+**Best Hopfield score per arm, against its own cosine ceiling.** Each Hopfield
+column is the maximum over betas *independently*, so a row may combine cells from
+two different betas — it is the most generous reading of the layer available, and
+it still loses:
+
+| corpus | arm | cosine @1/@5/@10 | best Hopfield @1/@5/@10 | max rho_rank |
+|---|---|---|---|---|
+| LoCoMo (n=494) | baseline | 0.306 / 0.561 / 0.650 | 0.308 / 0.395 / 0.451 | 0.32 |
+| LoCoMo | whitened | 0.342 / 0.579 / 0.648 | 0.342 / 0.433 / 0.484 | 0.20 |
+| LoCoMo | DG (neg control) | 0.296 / 0.514 / 0.603 | 0.298 / 0.362 / 0.411 | 0.29 |
+| LoCoMo | both | 0.310 / 0.528 / 0.595 | 0.318 / 0.362 / 0.383 | 0.24 |
+| QMSum (n=170) | baseline | 0.324 / 0.694 / 0.824 | 0.335 / 0.541 / 0.682 | 0.51 |
+| QMSum | whitened | 0.335 / 0.676 / 0.794 | 0.341 / 0.559 / 0.718 | 0.30 |
+| QMSum | DG (neg control) | 0.276 / 0.629 / 0.782 | 0.271 / 0.524 / 0.653 | 0.43 |
+| QMSum | both | 0.365 / 0.688 / 0.788 | 0.365 / 0.559 / 0.712 | 0.29 |
+
+**The two corpora agree, in all four arms:**
+
+1. **The tie at hit@1 survives — at usable temperatures.** At beta = 128 and 512
+   every arm on both corpora ties its cosine ceiling at the top rank (exact paired
+   p from 0.3438 to 1.0000), and the largest hit@1 difference there is +0.012, well
+   inside the ~0.04 resolution limit. This is **not** true at every beta and should
+   not be stated as though it were: at beta = 2 and 8 the layer loses hit@1
+   outright with p = 0.0000 in all eight arm/corpus combinations, and at beta = 32
+   the three DG-bearing arms still lose (LoCoMo DG d@1 -0.067 p = 0.0000, LoCoMo
+   both p = 0.0001, QMSum DG p = 0.0075). The tie is a high-beta phenomenon.
+2. **Below the top rank the layer loses, everywhere.** Against its own cosine
+   ceiling the best Hopfield cell gives up **0.076 to 0.212** at hit@10 and 0.105
+   to 0.166 at hit@5, in all eight arm/corpus combinations. The smallest gaps
+   (0.076) are QMSum whitened and QMSum both; the largest (0.212) is LoCoMo both.
+   There is no cell on either corpus where settling beats cosine below rank 1.
+3. **The tie is not degeneracy.** `rho_rank` never exceeds 0.51. If the layer
+   were cosine kNN in disguise the rank correlation would sit at 1.0; instead it
+   genuinely reorders — top-10 overlap with cosine peaks at 0.44 — and the
+   reordering is what costs the recall.
+4. **Raising separation does not rescue it.** Whitening drives anisotropy to
+   ~0.000 on both corpora, satisfying the capacity results' precondition, and the
+   gap to cosine persists unchanged. Whitening lifts the cosine ceiling and the
+   Hopfield arm by the same amount, so that gain belongs to embedding geometry,
+   not to attractor dynamics.
+5. **The negative control behaves as a control should.** DG raises key anisotropy
+   (LoCoMo 0.041 -> 0.134, QMSum 0.056 -> 0.143) and loses recall on both corpora.
+   The falsifiable prediction IV.4 offered — the arm that lowers separation should
+   not beat the arm that raises it — held.
+
+**Why the tie at rank 1 and the loss below it are the same fact.** After settling,
+the state *is* the attractor, so ranks 2..k are ordered by similarity to the
+attractor rather than to the query. The query's own information is spent getting
+there. That predicts precisely what the grid shows: agreement about the single
+best match (`top1=cos` reaches 0.955-1.000 at high beta) and degradation
+everywhere below it.
+
+**The answer, in one sentence:** *For retrieval, the Hopfield layer offers nothing
+that cosine nearest neighbours does not — it ties at rank 1 by reducing to
+attention over the same vectors, and every reordering it contributes below rank 1
+makes recall worse, on both corpora, at every separation configuration tested
+including the one that satisfies the capacity precondition.*
+
+## VIII.2 Pattern completion on real data — the claim had no baseline (ticket 10)
+
+Section 4 reports perfect completion from 26 of 205 active units on the
+*synthetic* corpus. Part II already established that the synthetic retrieval
+numbers were largely an artifact of the generator and retracted them on those
+grounds; the completion number is the same class of number and had never faced
+the same test. `experiments/completion_check.py` runs it on both real corpora —
+and, critically, adds **the single-shot cosine arm on identical degraded cues**
+that section 4 never had.
+
+**LoCoMo, 400 cues per cell; QMSum, 1000 cues per cell. `delta` is completion
+minus cosine, so negative means iterative settling lost:**
+
+| arm / protocol | corpus | 80% | 50% | 30% | 20% | 10% | 5% kept |
+|---|---|---|---|---|---|---|---|
+| baseline (dense) coords | LoCoMo | +0.000 | +0.000 | +0.000 | +0.000 | -0.015 | **-0.215** |
+| whitened (dense) coords | LoCoMo | +0.000 | +0.000 | +0.000 | +0.000 | -0.007 | -0.113 |
+| DG (sparse) coords | LoCoMo | +0.000 | +0.000 | +0.000 | +0.000 | +0.000 | -0.182 |
+| **DG (sparse) units** | LoCoMo | +0.000 | +0.000 | +0.000 | +0.000 | +0.000 | **+0.005** |
+| baseline (dense) coords | QMSum | -0.001 | **+0.001** | -0.003 | -0.017 | -0.046 | **-0.209** |
+| whitened (dense) coords | QMSum | -0.002 | -0.002 | -0.002 | -0.002 | -0.010 | -0.054 |
+| DG (sparse) coords | QMSum | -0.002 | -0.002 | -0.003 | -0.003 | -0.011 | -0.207 |
+| **DG (sparse) units** | QMSum | -0.002 | -0.002 | -0.002 | -0.002 | -0.001 | **+0.011** |
+
+**The mechanism is not broken — that is what makes this decisive.** Convergence is
+1.00 in every cell but one (0.999, QMSum DG coords at 5% kept), clamping is exact,
+and settling takes 2.0-4.2 iterations, rising as the cue degrades exactly as the
+energy picture predicts. The
+network genuinely settles onto the right memory. Cosine simply already found it,
+without iterating, from the same ruined cue.
+
+**What survives and what does not.** The measurement in section 4 reproduces on
+real data — in the sparse-key, active-unit protocol it is *better* than synthetic
+(1.000 at 12.6 surviving units on LoCoMo, against synthetic's 0.775 at 13). So the
+occlusion-robustness number itself is not retracted. What is retracted is the
+interpretation it invited: that this demonstrates something attractor dynamics buy
+you. Against the baseline it never had, completion beats cosine in **3 of 48 cells
+across both corpora**: the most-degraded sparse-key/units cell on each corpus
+(+0.005 LoCoMo, +0.011 QMSum), and one isolated QMSum dense-coords cell at 50%
+kept (+0.001). Everywhere else it ties or loses, by as much as -0.215.
+
+The two units cells are worth naming precisely rather than dismissing: they are the
+*same* cell on both corpora, and it is exactly the regime section 4's original
+claim was made in. The direction is consistent. The third (+0.001, a single
+question either way at n=1000) is noise and is listed only so the count is honest. But the magnitudes are inside this
+project's resolution limit, this harness computes no paired significance test for
+completion-vs-cosine, and no other cell supports them. **A replicated direction
+inside the noise floor is a reason to measure again, not a result.**
+
+**Section 4 is corrected, not deleted:** the occlusion numbers stand; the claim
+that they show iterative completion outperforming a one-shot lookup is withdrawn,
+because it was never compared against one.
+## VIII.3 Gist recall: the metastable regime does not exist here (ticket 11)
+
+Schema absorption — the "complementary learning systems" idea the project is named
+for — measured for the first time. `experiments/gist_check.py`.
+
+The task is derived from the corpora's own human annotation, not generated: keep
+only questions whose `evidence` set has >= 2 distinct turns, and score how much of
+that *set* each arm recovers in its top-k. Identifying one memory cannot suffice
+by construction. Three arms on identical queries: `gist()` (low-beta settle),
+`recall()` (ordinary settle), and — the control the ticket demands — a plain
+unweighted **centroid** of the cosine-top-5 keys, with no settling, no iteration,
+no dynamics at all.
+
+| corpus | recall | **centroid (no dynamics)** | gist @ best beta | gist when genuinely mixed |
+|---|---|---|---|---|
+| LoCoMo (n=423) | 0.130 | **0.192** | 0.110 (beta=32) | 0.062 (factor=0.15) |
+| QMSum (n=165) | 0.068 | **0.070** | 0.064 (beta=32) | 0.043 (factor=0.15) |
+
+**Gist loses to a plain average on both corpora**, and loses to ordinary
+single-episode recall on LoCoMo. But the diagnostics are what settle the question,
+because they show there is no operating point where the claimed mechanism is even
+*present* alongside usable accuracy:
+
+| corpus | beta | coverage | top1 weight | effective_n | is_mixture |
+|---|---|---|---|---|---|
+| LoCoMo | 2 | 0.001 | 0.007 | 326.2 | 1.000 |
+| LoCoMo | 32 | 0.110 | 0.993 | 3.4 | 0.007 |
+| LoCoMo | factor=0.15 | 0.062 | 0.464 | 166.9 | 0.544 |
+| QMSum | 2 | 0.017 | 0.004 | 521.5 | 1.000 |
+| QMSum | 32 | 0.064 | 0.935 | 1.8 | 0.079 |
+| QMSum | factor=0.15 | 0.043 | 0.575 | 19.0 | 0.455 |
+
+Every setting is one of three things and never the fourth. At low beta the state
+collapses onto a near-uniform blend of the entire store (effective_n 326 and 522 —
+that is the global centroid, which carries no information about the query). At
+beta=32 coverage is at its best but `top1` is 0.99 and `effective_n` is under 4:
+that is **single-episode retrieval wearing a mixture's name**, not a schema. The
+one genuinely mixed setting scores worst of all. **A regime that is both a real
+mixture and useful does not appear anywhere on either corpus.**
+
+This reproduces exactly what `hippocampus.step`'s own docstring predicts, which is
+why it is recorded as the expected honest result rather than a bug.
+
+**Status table correction.** "schema absorption (CLS): not yet tested" becomes
+**tested, and negative**: gist recall never beats a dynamics-free average of the
+same neighbours, on either corpus, at any temperature — and where it is genuinely
+metastable it is at its worst.
+
+## VIII.4 Abstention: Part IV narrowed, not confirmed (ticket 12)
+
+Part IV concluded "every signal is at chance, and the energy adds nothing over
+cosine." That was measured at an inverse temperature where this project had
+already proved the density degenerates into a monotone function of top-1 cosine.
+Under those conditions the conclusion is not a finding about energy; it is the
+arithmetic restated. `experiments/abstention_recheck.py` gives it the chance to
+fail.
+
+**Two protocols, and only one of them may speak to IV.1.** Protocol A calls
+`abstention.collect()` unmodified with IV.1's exact hybrid BM25+BGE bare-MHN
+factory — same write path, same store, so its numbers are comparable. Protocol B
+runs the full `OrganizationalMemory` (LSA embeddings, cortex-derived key, salience
+priors) and exists only to carry the DG negative control, which needs a key
+encoder. **Protocol B is not comparable to IV.1 and cannot confirm or withdraw
+it.** Out-of-fold evaluation, bootstrap CIs and Bonferroni correction across all
+paired tests are retained throughout, as the ticket requires.
+
+**The replication check passes exactly.** Protocol A at beta=128 reproduces IV.1's
+published AUCs to ±0.000 (cos_top1 0.480, log_density 0.481, neg_depth_nats 0.481,
+neg_settle 0.505), so what follows is a measurement of the same code path, not a
+different experiment.
+
+**Degeneracy is now visible per row, which is what the ticket asked for:**
+
+Every cell, both protocols, `log_density` against `cos_top1`:
+
+| protocol / arm | beta | rho(log_density, cos_top1) | delta AUC | survives Bonferroni? | energy adds (out-of-fold) |
+|---|---|---|---|---|---|
+| A baseline | 128 | **+0.9989** | +0.001 | no | -0.000 |
+| A baseline | 32 | +0.8351 | +0.024 | no | +0.011 |
+| A baseline | 8 | **+0.2423** | +0.038 | no | +0.009 |
+| A whitened † | 128 | +0.9998 | -0.000 | no | +0.000 |
+| A whitened † | 32 | +0.9948 | +0.001 | no | -0.003 |
+| A whitened † | 8 | +0.8311 | +0.016 | no | -0.001 |
+| B baseline | 128 | +0.9902 | +0.000 | no | -0.005 |
+| B baseline | 32 | +0.8881 | +0.012 | no | -0.001 |
+| **B baseline** | **8** | **+0.2852** | **+0.063** | **YES** | **+0.022** |
+| B whitened | 128 | +0.9929 | +0.001 | no | -0.004 |
+| B whitened | 32 | +0.9223 | +0.007 | no | -0.011 |
+| **B whitened** | **8** | **+0.4049** | **+0.069** | **YES** | **-0.003** |
+| B DG (neg control) | 128 | +0.9761 | +0.002 | no | -0.008 |
+| B DG (neg control) | 32 | +0.7294 | +0.024 | no | -0.011 |
+| B DG (neg control) | 8 | +0.2394 | +0.040 | no | +0.003 |
+
+† **These three rows are not trustworthy and are shown only for completeness.**
+`_iv1_whitened_factory` fits the whitener per conversation, on 419 samples in 4480
+dimensions. `cls_memory/whitening.py` warns on exactly this and the warning fired
+ten times in the run (`abstention_recheck_t6.log:59`): the covariance is
+rank-deficient, so `transform()` projects onto a 419-dimensional subspace. Its own
+docstring calls this "the transductive fit every other whitening measurement in
+this project uses", but `separation_beta_sweep.build_embedder` — imported by the
+same module — says the opposite, that fitting per conversation "is rank-deficient
+and is the mistake that inflated RESULTS.md V.5". **The sweep is right and the
+abstention harness is wrong.** No conclusion below rests on an A-whitened row.
+
+**The verdict: Part IV's conclusion is narrowed to the high-temperature regime,
+not confirmed in general.**
+
+1. **At beta=128 the original finding stands, and now it is explained.** The
+   energy correlates with top-1 cosine at rho = 0.999. It adds nothing because at
+   that temperature it *is* cosine, relabelled. Part IV could not have detected an
+   effect there even if one existed.
+2. **At beta=8 the signals genuinely decorrelate** (rho falls to 0.24-0.29) and
+   positive effects appear. In Protocol A they reach +0.038 to +0.040 AUC and win
+   at the uncorrected 95% CI, but **none survive Bonferroni correction across 30
+   tests**, so Protocol A does not establish an effect — it only shows Part IV's
+   claim was never tested where it could fail.
+3. **In Protocol B, four signals survive correction**, all at beta=8 and all in
+   the two non-control arms: baseline `log_density` +0.063 [+0.001, +0.116] and
+   `neg_settle` +0.057 [+0.015, +0.113]; whitened `log_density` **+0.069**
+   [+0.010, +0.118] and `neg_settle` +0.056 [+0.008, +0.103]. **These are the only
+   Bonferroni-surviving positive results anywhere in this review**, and the largest
+   of them is the B-whitened one. They are also, by construction, not comparable to
+   IV.1.
+
+   But the out-of-fold column disagrees with the AUC column, and that matters: the
+   B-baseline effect is corroborated out-of-fold (energy adds **+0.022**) while the
+   larger B-whitened effect is **not** (-0.003). A signal whose paired AUC gain
+   survives correction but which adds nothing to a held-out classifier is a weaker
+   claim than its confidence interval makes it look. The corroborated result is the
+   smaller one.
+4. **The negative control behaves correctly.** DG at beta=8 shows the same effects
+   smaller (+0.040, +0.042) and neither survives correction.
+
+**The caveat that decides how much this is worth.** beta=8 is the temperature at
+which *retrieval* collapses — LoCoMo hit@1 is 0.004 there (VIII.1). So the energy
+carries abstention signal precisely where the system cannot retrieve anything. That
+is not fatal, because abstention and retrieval are separate reads and nothing
+forces them to share a temperature: a system could settle at beta=8 to decide
+*whether* to answer and at beta=128 to decide *what* to answer. But that is a
+design proposal this project has not measured, not a result. Protocol B also
+carries a question-length confound at AUC 0.421, which is not controlled for here.
+
+**What replaces Part IV's sentence:** *the energy adds nothing over cosine at the
+operating point where it is a monotone relabelling of cosine, which is where Part
+IV measured it; at low inverse temperature it decorrelates and shows a positive
+effect that survives multiple-comparison correction in the full system but not in
+IV.1's own protocol, at a temperature where retrieval itself does not work.*
+
+## VIII.5 A learned read-in memorises rather than compresses (ticket 13)
+
+Part VII's compression result was weakened by three things the ticket names: the
+decoder's query projections were never trained to read a memory slot, the
+compression was crude mean-pooling, and whitening cannot be applied inside a
+frozen model. `experiments/kv_learned_readin.py` fixes the first two — a 249,600-
+parameter `LearnedReadIn` trained by backpropagation through the frozen 135M
+decoder — and re-runs Part VII's own metric with its matched-noise controls.
+
+**The read-in trains, and on its training data it transforms the result:**
+
+| arm | NLL | forced choice | margin | slots | compression |
+|---|---|---|---|---|---|
+| none (no memory) | 3.612 | 0.500 | +0.100 | 0 | — |
+| `kv_super_all` (mean-pooled, untrained) | 3.625 | 0.562 | +0.085 | 1 | 610x |
+| **`kv_learned_all`** | **1.284** | **0.875** | **+1.640** | 1 | 610x |
+| `noise/learned` (matched control) | 12.001 | 0.375 | -0.199 | 1 | 610x |
+
+**The full compression curve, re-run against the learned read-in with Part VII's
+own metric and matched-noise controls** (`--pools 1,2,4,8,12,16,20,24`, the
+published Part VII pool set):
+
+| arm | NLL | forced choice | slots | compression | matched noise NLL |
+|---|---|---|---|---|---|
+| `kv_pool1` | 3.606 | 0.500 | 26 | 23.5x | 8.786 |
+| `kv_pool2` | 3.632 | 0.500 | 52 | 11.7x | 9.975 |
+| `kv_pool4` | 3.752 | 0.500 | 104 | 5.9x | 10.898 |
+| `kv_pool8` | 3.988 | 0.312 | 208 | 2.9x | 11.712 |
+| `kv_pool12` | 3.119 | 0.250 | 312 | 2.0x | 12.141 |
+| `kv_pool16` | 2.700 | 0.250 | 414 | 1.5x | 12.821 |
+| `kv_pool20` | 2.529 | 0.250 | 488 | 1.2x | 13.054 |
+| `kv_pool24` | 2.243 | 0.312 | 530 | 1.2x | 12.678 |
+
+The curve reproduces Part VII's shape: **forced-choice accuracy falls from 0.500 to
+0.250 as pooling tightens**, and NLL improves past pool 12 only because the arm is
+approaching the uncompressed cache (530 of 610 slots at pool 24 is 1.2x, not
+compression). The matched-noise controls sit at 8.8-13.1 throughout, so the harness
+is discriminating memory from noise exactly as it should.
+
+**That row is contaminated and must not be read as a compression win.** It scores
+all 16 situations, 12 of which the projection trained on. The honest number is the
+held-out split:
+
+| arm | train NLL | held-out NLL |
+|---|---|---|
+| `kv_learned_all` | **0.003** | **5.126** |
+| `kv_super_all` (untrained) | 3.630 | 3.609 |
+
+**The learned read-in generalises worse than not training at all** — 5.126 against
+the untrained 3.609 — while driving training NLL to 0.003. 249,600 parameters
+memorising 12 situations.
+
+**This is robust to the hyperparameter, which is the only reason it is publishable.**
+The first full run used lr=0.1 and *diverged* (loss 3.63 -> 5.86); reporting that as
+"the mechanism fails to generalise" would have been an artifact of a bad optimiser
+setting. Learning rate was then selected on **training-loss convergence only** —
+never on the held-out metric, which would be tuning on the test set:
+
+| lr | final train loss | train NLL | held-out NLL |
+|---|---|---|---|
+| 0.1 | 5.855 (diverged) | 5.760 | 7.645 |
+| 0.03 | 0.093 | 0.089 | 4.833 |
+| **0.01** | **0.003** | 0.003 | 5.126 |
+| 0.003 | 0.017 | 0.016 | 5.058 |
+
+Every converged setting generalises worse than the untrained baseline. The result
+is the mechanism's, not the optimiser's.
+
+**The zero-context-token claim is re-confirmed exactly and stays separate.** 610
+tokens of rule text supplied as prefilled cache instead of prompt: **0 context
+tokens, same 610 slots, dNLL -1.490e-07.** This never depended on compression or on
+`LearnedReadIn`, and it remains the one exact positive result in this area.
+
+**V.4's cost table and the capacity claim.** "100 rules -> 1 slot at 3600x" was
+never a Hopfield capacity claim. Modern-Hopfield capacity (Ramsauer et al. 2021,
+arXiv:2008.02217) concerns storing N patterns as N separate rows and retrieving
+*one* by settling — `step`/`retrieve` in this repo. Summing N patterns into one
+vector and reading several back out is `superpose`/`decode`, a different pair of
+operations, and the literature that governs it is vector-symbolic architectures /
+holographic reduced representations — Plate's circular-convolution binding and
+vector-sum superposition (Plate, "Holographic Reduced Representations", IEEE
+Transactions on Neural Networks, 1995), whose crosstalk bound sets reliable
+unbinding far below what V.4's framing implied and requires near-orthogonal codes.
+That is precisely what the whitening result in V.2 rediscovered empirically. The
+ratio this measurement supports at one slot is **not** 610x usable capacity: it is
+610x compression at the cost of the memory becoming indistinguishable from no
+memory at all (3.625 against none's 3.612).
+
+## VIII.6 Part III's table, re-measured — and the two causes separated
+
+Part III's headline table predates review tickets 01-08 and defect 1. Every row of
+it has moved. This section restates it at a pinned thread count and **separates the
+two causes**, because "the numbers changed" is not a finding until you can say what
+changed them.
+
+The separation is possible because `separation_beta_sweep.py` reports both read
+paths per cell: the fixed ranking and the **shipped** one (ranking by
+`trace.weights`, which underflows). Running it at Part III's own configurations
+gives the pre-fix and post-fix numbers on identical post-ticket-01-08 code.
+
+**LoCoMo** — 3 conversations, 1451 turns, 494 questions:
+
+| configuration | published | after tickets 01-08 | + defect-1 fix |
+|---|---|---|---|
+| was: LSA-256, separated, β=8 | 0.004 / 0.012 / 0.036 | 0.002 / 0.010 / 0.026 | unchanged |
+| + β=128 | 0.154 / 0.235 / 0.291 | 0.221 / 0.279 / 0.354 | unchanged |
+| + key=embedding | 0.172 / 0.235 / 0.310 | 0.217 / 0.289 / 0.340 | unchanged |
+| **now: + LSA-1024** | 0.251 / 0.318 / 0.356 | 0.306 / 0.358 / 0.383 | **0.306 / 0.395 / 0.439** |
+
+**The defect-1 fix contributes exactly 0.000 to the first three rows** — the
+dim-256 grid's shipped and fixed rows are identical at both β=8 and β=128 (0 and
+1.2% of questions tie respectively, and the ties change nothing). All of their
+movement is tickets 01-08. Only the LSA-1024 row is shared, and there hit@1 is
+entirely tickets 01-08 while the *whole* hit@5/hit@10 gain is the fix.
+
+**QMSum** — 6 meetings, 3473 turns, 38 questions:
+
+| configuration | published | now (6 threads) |
+|---|---|---|
+| was: LSA-256, separated, β=8 | 0.053 / 0.211 / 0.316 | 0.079 / 0.158 / 0.237 |
+| + β=128 | 0.158 / 0.526 / 0.658 | 0.263 / 0.500 / 0.553 |
+| + key=embedding | 0.211 / 0.421 / 0.579 | 0.211 / 0.553 / 0.684 |
+| **now: + LSA-1024** | 0.395 / 0.632 / 0.658 | **0.447 / 0.658 / 0.684** |
+
+At 38 questions one question is 0.026, so no QMSum row here resolves anything on
+its own; the table is restated for consistency, not as evidence.
+
+**Two honest qualifications:**
+
+- The first two LoCoMo rows use the DG key, so a few thousandths of their movement
+  is thread count rather than ticket work. That contribution is bounded at ~0.008
+  by defect 2's measured 6-vs-8 spread, against movements of +0.067 — small, but
+  stated rather than implied away.
+- **The "63x" headline should not be restated as a multiple.** It now computes to
+  153x on LoCoMo (0.002 -> 0.306), but the denominator is one question in 494. A
+  ratio whose denominator is a single question is not a measurement. The absolute
+  numbers are the result; the multiple never was.
+
+Reproduce with:
+
+```bash
+PYTHONPATH=. uv run python -u experiments/recall_check.py --corpus locomo --locomo 3 --threads 6
+PYTHONPATH=. uv run python -u experiments/recall_check.py --corpus qmsum --qmsum 6 --threads 6
+PYTHONPATH=. uv run python -u experiments/separation_beta_sweep.py --corpus locomo --locomo 3 \
+    --dim 256 --betas 8 128 --arms baseline "DG (neg control)" --threads 6
+```

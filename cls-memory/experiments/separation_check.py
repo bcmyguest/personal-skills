@@ -34,6 +34,7 @@ from cls_memory import HippocampalKey
 from experiments import locomo, qmsum
 from experiments.metrics import mcnemar_exact
 from experiments.recall_check import KS, SEED, evaluate
+from experiments.threads import add_threads_arg, pin_threads
 
 ARMS = [
     ("baseline (LSA-1024, key=embedding)", HippocampalKey.EMBEDDING, False),
@@ -48,7 +49,9 @@ def main() -> None:
     parser.add_argument("--corpus", choices=("locomo", "qmsum"), default="locomo")
     parser.add_argument("--locomo", type=int, default=3)
     parser.add_argument("--qmsum", type=int, default=8)
+    add_threads_arg(parser)
     args = parser.parse_args()
+    threads = pin_threads(args.threads)
     torch.manual_seed(SEED)
 
     if args.corpus == "locomo":
@@ -56,7 +59,8 @@ def main() -> None:
     else:
         convs = qmsum.load(max_meetings=args.qmsum)
     turns = sum(len(c.turns) for c in convs)
-    print(f"{args.corpus}: {len(convs)} conversations, {turns} turns\n")
+    print(f"{args.corpus}: {len(convs)} conversations, {turns} turns, "
+          f"{threads} threads\n")
 
     results = []
     for label, key_mode, whiten in ARMS:

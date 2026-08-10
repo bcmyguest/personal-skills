@@ -126,7 +126,21 @@ class PatternCompleter:
         trace = mhn.retrieve(cue, mask=mask, beta=beta)
 
         k = min(top_k, len(self.store))
-        weights, idx = torch.topk(trace.weights, k)
+        # Ranked on the LOGITS at the settled state, not on `trace.weights`.
+        # The two are the same ordering in exact arithmetic -- the weights are
+        # softmax(logits) -- but not in float32. Once beta * (cosine gap)
+        # exceeds ~88 the softmax flushes to exactly 0.0, and at the shipped
+        # default of beta=128 that is nearly the whole store: 38 of 40 patterns
+        # on a 64-d synthetic, and every question on LoCoMo. `topk` then breaks
+        # the resulting tie by storage order, so every rank below the first was
+        # returned in *insertion order* rather than by similarity. Measured on
+        # LoCoMo conversation 1 at beta=128, hit@10 was 0.327 ranked by weights
+        # against 0.418 for the identical store ranked by logits.
+        #
+        # Ranking on logits is exact at every beta; widening the softmax to
+        # float64 would only move the cliff from beta*gap ~88 to ~700.
+        idx = torch.topk(mhn.logits(trace.state, beta), k).indices
+        weights = trace.weights[idx]
         sims = trace.state @ mhn.patterns.T
 
         results = [
