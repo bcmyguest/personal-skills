@@ -1,0 +1,190 @@
+{
+  "anisotropy": [
+    0.9844343662261963,
+    0.988672137260437,
+    0.9804191589355469,
+    0.9715724587440491,
+    0.971413791179657,
+    0.9643999934196472,
+    0.9743177890777588,
+    0.9576749205589294,
+    0.9549041390419006,
+    0.9750981330871582,
+    0.9819287061691284,
+    0.9891375303268433,
+    0.9762353301048279,
+    0.9708027243614197,
+    0.9551954865455627,
+    0.9636344909667969,
+    0.9748378992080688,
+    0.9480739235877991,
+    0.9211069941520691,
+    0.9827353358268738,
+    0.9653682708740234,
+    0.9629150629043579,
+    0.966243326663971,
+    0.9705560803413391,
+    0.9695749878883362,
+    0.9699575304985046,
+    0.9720911383628845,
+    0.9734277129173279,
+    0.9722021222114563,
+    0.9673784971237183
+  ],
+  "arms": {
+    "none": {
+      "recite_nll": 3.612097278237343,
+      "forced_choice": 0.5,
+      "margin": 0.10019336640834808,
+      "prompt_tokens": 0,
+      "slots": 0
+    },
+    "text": {
+      "recite_nll": 0.9416318461298943,
+      "forced_choice": 0.5,
+      "margin": -0.00669204443693161,
+      "prompt_tokens": 610,
+      "slots": 610
+    },
+    "kv_full": {
+      "recite_nll": 0.9416319951415062,
+      "forced_choice": 0.5,
+      "margin": -0.006692148745059967,
+      "prompt_tokens": 0,
+      "slots": 610
+    },
+    "kv_pool1": {
+      "recite_nll": 3.606109321117401,
+      "forced_choice": 0.5,
+      "margin": 0.06161409616470337,
+      "prompt_tokens": 0,
+      "slots": 26
+    },
+    "noise/1": {
+      "recite_nll": 8.78596580028534,
+      "forced_choice": 0.375,
+      "margin": -0.1925908625125885,
+      "prompt_tokens": 0,
+      "slots": 26
+    },
+    "kv_pool2": {
+      "recite_nll": 3.631695255637169,
+      "forced_choice": 0.5,
+      "margin": 0.03980495035648346,
+      "prompt_tokens": 0,
+      "slots": 52
+    },
+    "noise/2": {
+      "recite_nll": 9.97475254535675,
+      "forced_choice": 0.4375,
+      "margin": -0.32079243659973145,
+      "prompt_tokens": 0,
+      "slots": 52
+    },
+    "kv_pool4": {
+      "recite_nll": 3.7515557408332825,
+      "forced_choice": 0.5,
+      "margin": -0.03288182616233826,
+      "prompt_tokens": 0,
+      "slots": 104
+    },
+    "noise/4": {
+      "recite_nll": 10.898352026939392,
+      "forced_choice": 0.375,
+      "margin": -0.24580049514770508,
+      "prompt_tokens": 0,
+      "slots": 104
+    },
+    "kv_pool8": {
+      "recite_nll": 3.98813334107399,
+      "forced_choice": 0.3125,
+      "margin": -0.23502683639526367,
+      "prompt_tokens": 0,
+      "slots": 208
+    },
+    "noise/8": {
+      "recite_nll": 11.711624681949615,
+      "forced_choice": 0.375,
+      "margin": -0.5270764231681824,
+      "prompt_tokens": 0,
+      "slots": 208
+    },
+    "kv_pool12": {
+      "recite_nll": 3.119406573474407,
+      "forced_choice": 0.25,
+      "margin": -0.36958009004592896,
+      "prompt_tokens": 0,
+      "slots": 312
+    },
+    "noise/12": {
+      "recite_nll": 12.141316711902618,
+      "forced_choice": 0.375,
+      "margin": -0.42044252157211304,
+      "prompt_tokens": 0,
+      "slots": 312
+    },
+    "kv_pool16": {
+      "recite_nll": 2.700303480029106,
+      "forced_choice": 0.25,
+      "margin": -0.44738704711198807,
+      "prompt_tokens": 0,
+      "slots": 414
+    },
+    "noise/16": {
+      "recite_nll": 12.820937097072601,
+      "forced_choice": 0.375,
+      "margin": -0.555495023727417,
+      "prompt_tokens": 0,
+      "slots": 414
+    },
+    "kv_pool20": {
+      "recite_nll": 2.52899768948555,
+      "forced_choice": 0.25,
+      "margin": -0.39448709785938263,
+      "prompt_tokens": 0,
+      "slots": 488
+    },
+    "noise/20": {
+      "recite_nll": 13.053637981414795,
+      "forced_choice": 0.3125,
+      "margin": -0.9203354716300964,
+      "prompt_tokens": 0,
+      "slots": 488
+    },
+    "kv_pool24": {
+      "recite_nll": 2.242733985185623,
+      "forced_choice": 0.3125,
+      "margin": -0.2609490305185318,
+      "prompt_tokens": 0,
+      "slots": 530
+    },
+    "noise/24": {
+      "recite_nll": 12.677994966506958,
+      "forced_choice": 0.375,
+      "margin": -0.2640436291694641,
+      "prompt_tokens": 0,
+      "slots": 530
+    },
+    "kv_super_all": {
+      "recite_nll": 3.624679073691368,
+      "forced_choice": 0.5625,
+      "margin": 0.08464573323726654,
+      "prompt_tokens": 0,
+      "slots": 1
+    },
+    "kv_super_k8": {
+      "recite_nll": 3.6451593935489655,
+      "forced_choice": 0.5625,
+      "margin": 0.08512869477272034,
+      "prompt_tokens": 0,
+      "slots": 1
+    },
+    "noise/1slot": {
+      "recite_nll": 3.888484627008438,
+      "forced_choice": 0.5625,
+      "margin": 0.04287932813167572,
+      "prompt_tokens": 0,
+      "slots": 1
+    }
+  }
+}

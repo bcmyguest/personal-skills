@@ -1,0 +1,663 @@
+# Handoff — CLS organizational memory
+
+For whoever picks this up next. Written at commit `67f98cc` on branch
+`claude/cls-organizational-memory-poc-s9afk0`.
+
+**The one open task is recall.** Everything else is either done, measured, or
+explicitly listed below as a known limitation.
+
+- **§3A is the ordered plan** — priorities, blockers, critical path. Start there.
+- §3 is the reasoning behind it; §1–2 are the context you need to not redo work.
+- §5 is the failure pattern this project keeps repeating. Read it before
+  trusting your own fixes.
+
+---
+
+## 0. Orientation
+
+```bash
+cd cls-memory
+uv venv
+uv sync --extra dev --extra test-embeddings    # complete path -- see below
+uv run pytest                                  # full suite, 0 skipped
+PYTHONPATH=. uv run python examples/demo.py    # full lifecycle
+
+# the two real datasets (gitignored, ~5.5 MB total)
+curl -sLo experiments/data/locomo10.json \
+  https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json
+curl -sLo experiments/data/qmsum_test.jsonl \
+  https://raw.githubusercontent.com/Yale-LILY/QMSum/main/data/ALL/jsonl/test.jsonl
+```
+
+**`test-embeddings` (`onnxruntime` + `tokenizers`) is required to run the full
+suite.** `tests/test_superposition.py` runs real BGE-small-v1.5 embeddings
+through `experiments/recall_ablation.py`'s `BGEEmbedder` to back RESULTS.md
+Part V's claims. Without that extra installed those 15 tests **fail loudly**
+(not skip silently, as of issue 01) so a reviewer can't mistake a green run
+for one that verified those claims — set
+`CLS_MEMORY_ALLOW_MISSING_EMBEDDINGS=1` to explicitly opt into the old skip
+behaviour instead. This is a separate dependency from the `embeddings` extra
+(`sentence-transformers`), which backs the untried `SentenceTransformerEmbedder`
+and gates nothing in the test suite. **No CI config exists in this repo** —
+the command above is the complete path; run it exactly to exercise everything.
+
+`uv sync` prunes anything not in the extras you name. `fastembed` is currently
+installed in this venv but is *only* used by `experiments/bge_base_probe.py`
+(nothing in the test suite imports it — `BGEEmbedder` drives ONNX and
+`tokenizers` directly). Add `--extra probes` if you want that probe to keep
+working.
+
+Read in this order: `README.md` (design + §11–13 review history), `RESULTS.md`
+(every measured number, Parts I–III), then this file.
+
+Key scripts:
+
+| script | what it answers | runtime |
+|---|---|---|
+| `experiments/recall_ablation.py` | where in the pipeline recall is lost | ~2 min |
+| `experiments/recall_check.py` | did a change help, on **both** corpora | ~2 min |
+| `experiments/benchmark.py` | synthetic corpus, all 7 mechanisms | ~8 min |
+| `experiments/benchmark_locomo.py` | real-data retrieval / gate / decay | ~3 min |
+| `experiments/significance.py` | **confounded, do not trust** (see §4) | — |
+
+---
+
+## 1. What is solid — do not re-litigate
+
+Three independent adversarial reviews checked these. Re-deriving them is waste.
+
+**Mathematics, verified numerically:**
+- Ramsauer eq. 4 with an added per-pattern log-prior; reduces to the paper's
+  form exactly under a uniform prior (difference 0.0).
+- CCCP monotone energy descent, including under non-uniform priors *and* under
+  masking (max increase 1.9e-6 over 300 trials).
+- `exp(-βE)` is exactly the Gaussian mixture at σ²=1/β, at any pattern scale —
+  this required folding `-β‖xᵢ‖²/2` into the logits instead of the paper's
+  global `+½M²`.
+- `log_density` integrates to 0.9999999999999575 on a 2-D grid.
+- Tweedie/Miyasawa: one MHN update **is** one exact denoising step (agreement
+  5e-16 in float64).
+- ULA divergence bound `η > 4/β`, and the step caps' effect on the stationary
+  distribution (0.05766 measured vs 0.05774 predicted).
+
+**Consolidation** was validated by a held-out control, not by its authors'
+own metric: surprise falls on stored episodes (0.902 → 0.530) while held-out
+routine surprise *rises* ~2.8× in **both** arms, so the pruning criterion is
+not simply getting easier. The store drains 21 → 0 over four passes at
+`episodic_ratio=0.125`, against 21 → 21 at ratio 0.
+
+**Design decisions that were measured, not guessed** (all in `config.py`
+docstrings with numbers):
+- `kl_weight=0.01` — at 1.0 the posterior collapses and the novelty signal
+  drops from 0.57 to 0.08 separation.
+- `beta=128` — at the old default of 8, *every query settled onto one global
+  mixture* (six cues → six states at pairwise cosine 1.0000) while reporting
+  `converged=True`. This was the single largest recall defect.
+- `key=EMBEDDING` — dentate-gyrus separation beats the VAE latent but loses to
+  the raw embedding on real text (0.121 vs 0.150).
+- `input_dim=1024` — dimension is the binding constraint on the embedder.
+
+---
+
+## 2. Where recall actually stands
+
+Measured on 3 LoCoMo conversations (1451 turns, 494 questions) and 6 QMSum
+meetings (3473 turns, 38 questions). Full tables in `RESULTS.md` Part III.
+
+| | hit@1 | hit@5 |
+|---|---|---|
+| LoCoMo, current defaults | **0.306** | 0.358 |
+| QMSum, current defaults (25 meetings, 170 q) | **0.335** | 0.541 |
+| LoCoMo, shipped defaults before the fixes | 0.002 | 0.010 |
+
+> **Corrected.** This table previously read LoCoMo 0.250/0.318 and QMSum
+> 0.395/0.632. Both were stale; re-measured by running the **unmodified**
+> `experiments/recall_check.py` at `HEAD` (verified byte-identical to
+> `git show HEAD:`), so this is what the harness on this branch actually
+> prints, not a re-derivation.
+>
+> **LoCoMo 0.250 → 0.306 is a like-for-like correction.** Same 3
+> conversations, same 494 questions. The move is explained by §3.1d
+> retraction 2 — removing `max_features=20_000` from the LSA fit — which
+> landed in `embeddings.py` but was never propagated to this table.
+>
+> **QMSum 0.395 → 0.335 is NOT like-for-like and must not be read as a
+> regression.** The old figure came from the 6-meeting / 38-question slice
+> (§4); the new one is 25 meetings and 170 questions. Different denominators,
+> so the two numbers are not comparable and the difference is unattributed.
+> Whether the `max_features` change helps or hurts QMSum is therefore **still
+> unknown** — and since that change was validated on LoCoMo alone, it has
+> never faced this project's own both-corpora overfitting rule. Re-running the
+> pre-cap-removal configuration on the 25-meeting slice would settle it; that
+> has not been done.
+
+**The pipeline is no longer the problem.** At β=128 with `key=EMBEDDING` the
+full pipeline scores 0.172@1 against its embedder's own plain-kNN ceiling of
+0.174@1. The memory system adds essentially no loss. *All* remaining headroom
+is in the embedding.
+
+**Retrieval ceilings** (plain kNN over turns, no memory system, LoCoMo):
+
+| ranking | recall@1 | recall@5 |
+|---|---|---|
+| **TF-IDF cosine, sparse, no reduction** | **0.320** | **0.575** |
+| BM25 | 0.298 | 0.526 |
+| LSA-1024 (current default) | 0.255 | 0.528 |
+| LSA-256 | 0.174 | 0.397 |
+| hashing-256 (old default) | 0.077 | 0.176 |
+
+A bag-of-ngrams from the 1970s beats the current dense embedding by 26%
+relative. That gap is the task.
+
+---
+
+## 3. The task: close the gap to the sparse ceiling
+
+### 3.1 The leading hypothesis — CONFIRMED on a smoke test, needs the full run
+
+**Random projection should beat truncated SVD at equal dimension.**
+
+Truncated SVD keeps the top-k directions and *discards the tail entirely*. For
+short-query retrieval the discriminative signal lives in rare terms, which are
+exactly the tail. A Johnson–Lindenstrauss random projection instead preserves
+*all* directions approximately, with distortion `O(√(log n / d))`. At d=1024
+that should land much closer to the sparse ceiling than SVD does.
+
+Supporting evidence already in hand: the third review measured the randomised
+SVD's per-component agreement with an exact SVD at |cos| ≈ 1.00 for the leading
+components but as low as 0.07 in the tail (since fixed by re-orthonormalising —
+see `embeddings.py`), and LSA recall rises steeply with dimension
+(0.174 → 0.255 from 256 → 1024), which is what you expect if truncation is the
+loss mechanism.
+
+**Cheapest implementation** — signed feature hashing, no V×d matrix:
+for each term, hash to `k` output indices with random signs, accumulate
+`tfidf_weight * sign`. `k=2..4`. Memory-light, fast, no fitting beyond the
+existing vocabulary/IDF pass, and it drops straight into the existing
+`Embedder` protocol (`dim`, `encode`) with **no changes anywhere else**.
+
+**The ceiling rows now exist** (`HashedProjection` in
+`experiments/recall_ablation.py`, already satisfying the `Embedder` protocol).
+On a **one-conversation** smoke test — 419 turns, so treat it as indicative:
+
+| ranking | recall@1 | recall@5 |
+|---|---|---|
+| LSA-1024 (current default) | 0.250 | 0.515 |
+| TF-IDF sparse (the "ceiling") | 0.311 | 0.582 |
+| random-projection-1024 | 0.286 | 0.520 |
+| random-projection-2048 | 0.306 | 0.546 |
+| **random-projection-4096** | **0.327** | 0.556 |
+| **BM25-weighted RP-4096** | **0.332** | 0.571 |
+
+Random projection does not merely approach the sparse ceiling — at 4096 it
+**passes** it, and BM25 term weighting adds a little more. This is what the
+hypothesis predicted: SVD discards the tail, JL preserves it.
+
+### 3.1b Confirmed on the full set — and the bag-of-words question, correctly
+
+Full 3-conversation LoCoMo run, 494 questions.
+
+**Lexical (bag of n-grams):**
+
+| ranking (kNN ceiling) | @1 | @5 | @10 |
+|---|---|---|---|
+| LSA-1024 (current default) | 0.251 | 0.526 | 0.609 |
+| TF-IDF sparse | 0.320 | 0.575 | 0.648 |
+| random-projection-4096 | 0.322 | 0.555 | 0.630 |
+| **BM25-weighted RP-4096** | **0.330** | 0.581 | 0.640 |
+
+**Semantic (spaCy `en_core_web_lg`, 343k vectors) — pooling matters enormously:**
+
+| pooling | @1 | @5 |
+|---|---|---|
+| mean, raw vectors | 0.196 | 0.399 |
+| mean, L2-normalised tokens | 0.168 | 0.360 |
+| IDF-weighted, L2 tokens | 0.267 | 0.474 |
+| **SIF** (Arora et al. 2017) | **0.275** | 0.498 |
+| SIF + first-PC removal | 0.273 | **0.514** |
+
+**Hybrid (concatenate L2-normalised lexical and semantic, weight by alpha):**
+
+| alpha (lexical share) | @1 | @5 | @10 |
+|---|---|---|---|
+| 0.8 | 0.332 | 0.587 | 0.646 |
+| 0.6 | 0.358 | 0.599 | 0.666 |
+| 0.5 | 0.358 | 0.593 | **0.682** |
+| **0.4** | **0.360** | **0.603** | 0.662 |
+
+**The correction that matters.** An earlier version of this section claimed
+"moving off bag-of-words is a large regression", from a semantic score of 0.121.
+That was wrong, and it was wrong for two avoidable reasons: it used
+`en_core_web_md` (20k shared vector rows rather than lg's 343k unique) and a
+naive unweighted mean. Pooled properly the same idea scores 0.275 — more than
+double, and above the current LSA default. **Do not conclude anything about
+representations from a naive mean of word vectors.** Token coverage was 99.8%
+for both models, so coverage was never the issue; weighting was.
+
+Best configuration in the project is the hybrid at alpha 0.4-0.5:
+**0.360@1, 0.603@5, 0.682@10**, against the current default's 0.251@1. Note the
+optimum is *semantic-dominant*, the opposite of what the flawed test suggested.
+
+**A real transformer: BGE-small-en-v1.5 — reachable after all.** Qdrant's
+fastembed mirror on `storage.googleapis.com` serves the ONNX weights, and that
+host is *not* proxy-blocked. An earlier probe here recorded it as blocked; that
+probe used a wrong object key (the objects are prefixed `fast-`) and GCS
+answered 403, which was misread as a policy denial. HuggingFace, hf-mirror,
+cdn-lfs, ModelScope, Kaggle, gitee, Stanford NLP, fbaipublicfiles and GitHub
+LFS genuinely are blocked; PyPI, non-LFS `raw.githubusercontent.com`, GitHub
+*release* assets and `storage.googleapis.com` are not.
+
+`BGEEmbedder` (in the ablation) drives ONNX + `tokenizers` directly, so neither
+`fastembed` nor `transformers` is needed at run time, and it fetches the weights
+on first use.
+
+| ranking (kNN ceiling) | @1 | @5 | @10 |
+|---|---|---|---|
+| BM25-weighted RP-4096 (best lexical) | 0.330 | 0.581 | 0.640 |
+| BGE-small, with query prefix | 0.269 | 0.543 | 0.676 |
+| BGE-small, no query prefix | 0.257 | 0.547 | 0.654 |
+| hybrid RP-4096 + spaCy SIF (alpha=0.4) | 0.360 | 0.603 | 0.662 |
+| **hybrid RP-4096 + BGE (alpha=0.5)** | **0.393** | **0.644** | **0.749** |
+| hybrid RP-4096 + BGE (alpha=0.3) | 0.322 | 0.601 | 0.723 |
+
+Three things worth internalising:
+
+1. **BGE alone loses to lexical at recall@1** (0.269 vs 0.330) while *winning*
+   at recall@10 (0.676 vs 0.640). That is the expected shape for entity-heavy
+   short-query retrieval — LoCoMo questions name specific people, dates and
+   events, and exact matching is hard to beat at rank 1. A dense encoder is not
+   a drop-in replacement for lexical retrieval on this task.
+2. **The hybrid is decisively best**: 0.393@1 and 0.749@10 against the current
+   default's 0.251@1 / 0.609@10 — +57% relative at rank 1. The two halves fail
+   differently, which is exactly why combining them pays.
+3. **The query prefix matters** (0.269 vs 0.257). BGE v1.5 is asymmetric: the
+   instruction goes on queries only, never on documents.
+
+### 3.1c fastembed works, and the *bigger* encoder does not help
+
+**fastembed is a usable route here.** It tries HuggingFace, logs a failure, and
+falls back to a direct URL for the four models that still carry one —
+`BAAI/bge-base-en-v1.5`, `bge-base-en`, `bge-small-en`, `bge-small-zh-v1.5`.
+`bge-small-en-v1.5` is *not* one of them (its `sources.url` is `None`), which is
+why that one had to be fetched from the GCS tarball by hand.
+
+So there are two independent routes to a transformer here, and they cover
+different models:
+
+| route | models | notes |
+|---|---|---|
+| GCS tarball + ONNX directly (`BGEEmbedder`) | any `fast-*.tar.gz` object | no fastembed dependency |
+| `fastembed` with `cache_dir` | the 4 with a URL source | falls back automatically |
+
+**The bigger model is worse.** `bge-base-en-v1.5` (768d, stronger on MTEB)
+against `bge-small-en-v1.5` (384d), same harness, 3 conversations:
+
+| | @1 | @5 | @10 |
+|---|---|---|---|
+| BGE-base alone | 0.245 | 0.524 | 0.668 |
+| BGE-small alone | 0.269 | 0.543 | 0.676 |
+| hybrid + BGE-base (alpha=0.5) | 0.372 | 0.636 | 0.735 |
+| **hybrid + BGE-small (alpha=0.5)** | **0.393** | **0.644** | **0.749** |
+
+Base loses on every metric and is ~8x slower per row. Do not reach for a larger
+encoder on this task — it is entity-heavy exact-match retrieval where the
+lexical half carries rank-1, and a stronger semantic model does not change that.
+`experiments/bge_base_probe.py` reproduces this.
+
+### 3.1d Adversarial review — three conclusions retracted
+
+A review reproduced every published number exactly, then invalidated most of
+the conclusions drawn from them. What survives, what does not:
+
+**Retracted:**
+
+1. **"RP-4096 passes the sparse TF-IDF ceiling."** Seed 0 was the maximum of
+   five draws. Across seeds RP-4096 bm25 is **0.319 +- 0.010**, *below* the
+   0.320 exact-sparse figure it was said to pass — and it structurally cannot
+   beat it, being a JL approximation of exactly that cosine. Always report
+   mean +- sd for a randomised projection.
+   **Re-checked under ticket 05** (the IDF-convention fix below was not
+   actually wired up when this line was first written — see the correction to
+   "Also fixed", next). With `BM25Index`/`TfidfIndex` genuinely sharing
+   `HashedProjection`'s IDF corpus, `experiments/idf_retraction_check.py`
+   (same 3 conversations, n=494) gets exact-sparse TF-IDF **0.322** and
+   RP-4096-bm25 **0.321 +- 0.010** over 5 seeds (0.310-0.332); exact paired
+   McNemar against the ceiling is not significant at any seed (p in
+   [0.26, 0.85], every |delta| <= 0.012). **RETRACTION CONFIRMED** — unifying
+   the convention moved both figures by ~0.002, an order of magnitude below
+   the ~0.04 resolution limit, and changed nothing about the conclusion. See
+   RESULTS.md VI.5.
+2. **"Random projection beats truncated SVD at equal dimension."** False once
+   the feature sets are matched. LSA was capped at `max_features=20_000,
+   min_df=2` and saw 20k terms; `HashedProjection` saw 66k. **The cap was the
+   defect, not the SVD.** Removing it moves LSA-1024 from 0.251 to **0.306** at
+   unchanged dimension — a bigger gain than quadrupling the width buys. Now the
+   default in `cls_memory/embeddings.py`.
+3. **"The hybrid optimum is semantic-dominant."** Read off a mislabelled axis.
+   With both halves unit-norm the cosine is *quadratic* in the scaling factor:
+   `cos = [a^2 cos_lex + (1-a)^2 cos_sem] / (a^2 + (1-a)^2)`. The grid
+   `(0.5, 0.3, 0.2)` actually probed effective weights `(0.50, 0.155, 0.059)`
+   and never tested the lexical-dominant half. `HybridEmbedder` is now
+   parameterised by effective weight `w` directly.
+
+**Also fixed:** `HybridEmbedder` had no `encode_query`, so the getattr fallback
+used BGE's *document* encoder for queries — every hybrid row was measured
+without the query prefix while the BGE-alone row above it had it. A partial
+weights directory no longer takes down the run.
+
+**Correction (ticket 05):** the line above used to also claim "lexical
+baselines now share one IDF convention with the projection." That was
+aspirational, not true: `TfidfIndex` grew an `idf_corpus` hook but nothing
+ever called it, and `BM25Index` had no such hook at all, so `TfidfIndex`/
+`BM25Index` kept fitting IDF per-conversation while `HashedProjection` fit on
+the whole corpus — the exact mismatch item 1 above is about. `BM25Index` now
+has the same hook, `recall_ablation.py`'s ceilings section threads one shared
+`idf_corpus` through every lexical/hashed row and asserts it (`assert_shared_idf`),
+and the run prints which corpus was used. See RESULTS.md VI.5 for the
+re-verified numbers — the retraction survives.
+
+**Statistics.** `experiments/metrics.py` now has an exact paired McNemar test.
+At LoCoMo's n=494, **differences below ~0.04 hit@1 are not resolvable**. Under
+that rule the claims "query prefix is worth +0.012" (p=0.36), "BGE wins at
+hit@10, +0.036" (p=0.165) and "bge-base is worse than bge-small, -0.024" all
+fall below the resolution limit and should not have been stated as findings.
+The hybrid-beats-lexical result does survive: +0.063 hit@1, p=6.5e-5.
+
+**Metric naming.** What is reported is **hit@k** — 1 if any evidence item is in
+the top k — not recall@k. 93 of 494 questions have multiple evidence turns, so
+the figures sit above true recall. Consistent across rows, so no comparison is
+affected.
+
+### 3.1e Granularity, and why cross-paper comparison was meaningless
+
+`experiments/session_compare.py`. Published LoCoMo baselines retrieve
+**sessions** (BM25 top-3 of ~23); everything else here retrieves **turns**
+(top-1 of ~484). Same harness, both granularities:
+
+| | session (23 candidates) | | turn (484 candidates) | |
+|---|---|---|---|---|
+| | hit@1 | hit@3 | hit@1 | hit@5 |
+| BM25 | **0.690** | **0.828** | 0.298 | 0.526 |
+| BGE-small alone | 0.364 | 0.581 | 0.269 | 0.543 |
+| hybrid RP+BGE (w=0.5) | 0.605 | 0.808 | **0.397** | **0.660** |
+
+Two things follow, and both matter more than any tuning in this document:
+
+1. **The apparent gap to published memory systems is mostly task granularity.**
+   BM25 alone reaches 0.951 hit@10 at session granularity. Numbers like Zep's
+   94.7% or Mem0's 92.5% are end-to-end QA accuracy at session-level retrieval;
+   this project's 0.397 is turn-level top-1 on ~20x the candidates. **The two
+   were never comparable.** Do not quote them against each other.
+2. **The hybrid's advantage reverses with chunk size.** It beats BM25 at turn
+   granularity (+0.099 hit@1, p<0.0001) and **loses** at session granularity
+   (-0.085, p=0.0003). Long concatenated sessions exceed BGE's 512-token window
+   and dilute the CLS vector, while BM25 is indifferent to length. So the
+   "best" configuration is a function of chunk size, not a property of the
+   system — a second generalisation failure of the same kind as the QMSum one.
+
+**Consequence for task 1.1:** do not ship a single hybrid weight as a global
+default. Ship the lexical half (which is robust across both granularities and
+both corpora), make the semantic half opt-in, and set `w` per deployment from
+its own chunk size and corpus.
+
+**Revised task 1.1:** promote the lexical + BGE hybrid.
+1. Move `HashedProjection` into `cls_memory/embeddings.py` (BM25 weighting,
+   dim 4096).
+2. Move `BGEEmbedder` alongside it. Keep the weights download lazy and
+   `onnxruntime`/`tokenizers` **optional** — the lexical half must still work
+   without them, since the GCS mirror may not be reachable everywhere.
+3. Move `HybridEmbedder`, default `alpha=0.5`.
+4. Re-measure on **both** corpora, add tests, and check the footprint:
+   4096+384 dense dims per memory is ~4.4x the current 1024. If that is too
+   much, test RP-1024 + BGE — RP-1024 alone scores 0.306 against RP-4096's
+   0.322, so the lexical half may not need full width once BGE carries
+   recall@10.
+5. `SpacyVectorEmbedder` is superseded and can be dropped, unless you want a
+   fallback with a different reachability profile (spaCy models come from
+   GitHub releases, BGE from GCS).
+
+### 3.2 The fallback, and probably the better system anyway
+
+**Hybrid sparse-shortlist + Hopfield rank.** Use BM25 or TF-IDF to shortlist
+~100 candidates, then let the Hopfield layer settle over only those. This
+almost certainly beats any pure-dense option because it starts from the 0.320
+ceiling rather than a compressed approximation of it.
+
+Architecturally heavier: the MHN currently holds every memory as a dense row,
+so a shortlist means either building a transient sub-network per query, or
+masking the logits (`hippocampus.logits` returns `(N,)` — a `-inf` mask over
+non-candidates is the cheapest route and preserves the energy semantics for the
+surviving set). Prefer the mask; it keeps `retrieve`/`energy`/`basin_depth`
+working unchanged.
+
+Watch out: a masked logit vector changes the normalising constant, so
+`log_density` and `basin_depth` become conditional on the shortlist. Either
+document that or compute the basin report on the unmasked set.
+
+### 3.3 Cheaper things worth trying, roughly in order
+
+- **Context windows.** LoCoMo evidence is single turns, and a turn like
+  "Yes, definitely" is unretrievable alone. Index `turn ± 1` as the embedded
+  text while keeping per-turn identity. Untested; plausibly a large win on
+  dialogue, possibly a loss on QMSum where evidence is a contiguous span.
+- **Query-side asymmetry.** Questions and turns are different registers.
+  BM25's term saturation and length normalisation exist for this; the current
+  cosine has neither.
+- **`max_iter=1` for free cues.** One step is the Tweedie denoiser and was
+  never worse in the reviewer's probes (5/6 at every β); iterating only matters
+  for masked cues. Cheap latency win, possibly a small accuracy one.
+
+### 3.4 The single biggest unknown
+
+**Nothing has been tested with a real sentence encoder.** HuggingFace is
+unreachable from this environment, so `SentenceTransformerEmbedder` exists and
+is untried. If you have network access, run `experiments/recall_ablation.py`
+with it *first* — it may make 3.1 and 3.2 irrelevant, or reveal that the
+pipeline has a ceiling nobody has hit yet. Every retrieval number in this repo
+is a floor.
+
+### 3.5 How to know you succeeded
+
+Run `experiments/recall_check.py` — it evaluates on **both** corpora because a
+change that helps one and hurts the other is overfitting, and that has already
+happened once here (`key=EMBEDDING` cost QMSum recall@5 0.526 → 0.421 while
+helping recall@1). Beating 0.320@1 on LoCoMo means you have passed the sparse
+ceiling; anything at or above ~0.30 is a real result.
+
+---
+
+## 3A. Ordered plan, with blockers
+
+Priority is expected-value-per-effort, but **the ordering below is driven by
+dependencies, not by size**. Two rules produce most of it:
+
+1. *Fix the measurement before optimising against it.* Two of the numbers you
+   would judge success by are currently too weak to judge with.
+2. *Change one variable at a time.* The embedder question must settle before
+   anything that changes what gets indexed, or you cannot attribute the result.
+
+### P0 — make the verdict trustworthy (do first, ~half a day)
+
+| # | Task | Blocks | Blocked by | Why first |
+|---|---|---|---|---|
+| 0.1 | Widen the QMSum slice well beyond 6 meetings / 38 questions | every recall verdict | — | 38 questions cannot separate a real gain from noise, and QMSum is half the overfitting guard. Cheap: `qmsum.load(max_meetings=...)`, 35 meetings and 244 queries are already in the file. |
+| 0.2 | Add random-projection and BM25-weighted rows to the **ceilings** section of `recall_ablation.py` | 1.1, 1.2 | — | Decides which of the two recall routes is worth building, without writing production code. A ceiling row is ~20 lines. |
+| 0.3 | If network allows, add a `SentenceTransformerEmbedder` ceiling row | 1.1, 1.2 (may moot both) | network access to HuggingFace | Biggest single unknown. Could make the dense-embedding work irrelevant, or reveal a pipeline ceiling nobody has hit. Do not block on it — it may never be available here. |
+
+### P1 — the recall work (gated on P0)
+
+| # | Task | Blocks | Blocked by | Notes |
+|---|---|---|---|---|
+| 1.1 | Random-projection embedder (signed feature hashing over TF-IDF) | — | 0.2 | Do **only if** 0.2 shows RP-1024 clearly beating LSA-1024's 0.255@1. Drops into the `Embedder` protocol with no other changes — lowest-risk route to the 0.320 ceiling. |
+| 1.2 | Hybrid sparse shortlist + masked Hopfield logits | — | 0.2 | The higher-ceiling option and the likely end state, because it *starts* from 0.320 rather than approximating it. Heavier: masking changes the normalising constant, so `log_density`/`basin_depth` become shortlist-conditional. Do this if 1.1 underdelivers, or straight away if 0.2 shows RP is not enough. |
+
+**1.1 and 1.2 are alternatives, not a sequence.** Pick from 0.2's numbers. Doing
+both is only worth it if 1.1 lands close to the ceiling and you want the last
+few points.
+
+### P2 — compose on top (only after P1 settles)
+
+| # | Task | Blocked by | Notes |
+|---|---|---|---|
+| 2.1 | `max_iter=1` for free cues | — (independent) | The one item with no dependencies at all — a freebie, safe to land any time. One step is the Tweedie denoiser and was never worse in probing. |
+| 2.2 | Context windows (index `turn ± 1`, keep per-turn identity) | 1.1/1.2 | Changes *what is indexed*, so measuring it against a moving embedder confounds both. Plausibly large on LoCoMo dialogue, plausibly negative on QMSum spans — 0.1 matters here. |
+| 2.3 | Query-side asymmetry (BM25 saturation + length norm) | 0.2 | Partly absorbed by 0.2 if you add the BM25-weighted row; whatever is left is a small refinement. |
+
+### P3 — correctness and evaluation debt (does not block recall)
+
+| # | Task | Blocks | Notes |
+|---|---|---|---|
+| 3.1 | Fix `significance.py`'s confound (deep-copy the store per arm, counterbalance arm order) | any statistical claim about `episodic_ratio` | The consolidation trade-off currently has **no** statistical backing. Not on the recall path, but it is the one place where a quoted number would be unsupported — which is why none is quoted. |
+| 3.2 | Control the novelty gate for turn length (`corr = −0.48`) | trusting the gate on real text | Separate mechanism from retrieval. Matters for what *enters* the store, not what comes back. |
+| 3.3 | Make `half_life_days` a per-source setting | realistic multi-source deployments | Currently global and wrong for anything on a multi-month cadence. |
+
+### P4 — deployment blockers (out of scope for recall, in scope before any pilot)
+
+| # | Task | Notes |
+|---|---|---|
+| 4.1 | Per-memory ACLs enforced **before** retrieval | Filtering after settling leaks information through the attractor. This is a correctness requirement, not a feature. |
+| 4.2 | Persistence beyond `state_dict` | Records are plain dataclasses holding tensors; serialisation is straightforward but unwritten. |
+| 4.3 | Honour `MemorySystemConfig.device` | Declared and ignored; ancillary tensor construction in `hippocampus`/`energy` is CPU-bound. |
+| 4.4 | Housekeeping: drop the `record.key` duplicate, keep capacity across `remove()`, batch `basin_depth`, move `occlude` off the read path | All cosmetic or constant-factor. Cheapest last. |
+
+### Critical path
+
+```
+0.1 (widen QMSum) ──┐
+                    ├──▶ 0.2 (ceilings) ──▶ 1.1 or 1.2 ──▶ 2.2 ──▶ done
+0.3 (encoder, if network) ──┘
+```
+
+Everything in P3 and P4 is off this path and can proceed in parallel or later.
+2.1 is off it too and can land whenever.
+
+**If you only have an hour:** do 0.2. It tells you which of the two real options
+to build, and it is the difference between choosing on evidence and choosing on
+taste.
+
+---
+
+## 4. Known limitations — accepted, not bugs to rediscover
+
+- **`experiments/significance.py` is confounded.** Its arms share a store that
+  `consolidate()` mutates via `reindex`, and each arm consumes a different
+  amount of the global RNG stream. Both the drift (H1/H2) and pruning (H3) arms
+  are affected. **No number from it is quoted anywhere**, deliberately. To fix:
+  deep-copy and restore the whole store inside `drift_after`, and counterbalance
+  arm order across seeds.
+- **QMSum has only 38 questions** in the 6-meeting slice. Directions agree with
+  LoCoMo at every step; absolute values are indicative only. Widen it if you
+  need to lean on QMSum alone.
+- **The novelty gate is weak on real text** — 13% separation between held-out
+  and foreign-conversation turns (vs 13× on synthetic), and
+  `correlation(surprise, turn length) = −0.48`, so it is substantially a length
+  filter. Control for length before trusting it.
+- **`half_life_days=30` is domain-specific.** On LoCoMo's 231-day spans it puts
+  13.8% of the corpus below the prune floor and costs 1.6 points of recall.
+- **CPU only** — `MemorySystemConfig.device` is declared and ignored. Ancillary
+  tensor construction in `hippocampus`/`energy` does not honour device.
+- `basin_depth` is single-query; `PatternCompleter.occlude` is evaluation
+  tooling sitting on the read path; `record.key` duplicates its pattern row
+  (dropping it for a view would halve key memory); `remove()` releases capacity
+  so the next write reallocates; a `patterns` view held across a growing `write`
+  silently detaches (documented on the property).
+- **No persistence layer beyond `state_dict`, no access control, single-tenant.**
+  An organisational deployment needs per-memory ACLs enforced *before*
+  retrieval — filtering after settling leaks information through the attractor.
+
+---
+
+## 5. Traps — read this before trusting your own work
+
+This project has a consistent failure pattern, and you will hit it too.
+
+**Three separate times, a test written to verify a fix was itself wrong**, and
+each time it hid a real defect:
+- `test_reindex_is_atomic` passed a wrong-*width* key, caught by a dim check
+  *before* the removal, so the rollback it existed to test never executed.
+- `test_lsa_fit_uses_a_sparse_matrix` asserted nothing about sparsity and would
+  have passed against the dense implementation.
+- The first capacity-buffer fix read capacity from the live view instead of the
+  allocated buffer and was still O(N²) — only a timing test caught it.
+
+Treat "my fix + my test" as one unreviewed unit. Where you can, verify by a
+route you did not use to build the thing — the held-out control that finally
+validated consolidation is the model to copy.
+
+**Every headline number produced by a defective default went unnoticed because
+every experiment overrode it.** `beta=8` collapsed retrieval completely, and
+nobody saw it because `demo.py`, `benchmark.py` and `benchmark_locomo.py` all
+set `beta=32`. If you add a config knob, make at least one measurement run at
+the actual default.
+
+**Synthetic data flattered every mechanism.** Recall@1 was 1.000 on the
+template corpus and 0.121 on real dialogue with identical code. AUC was 1.0000
+for the novelty gate. Do not let a synthetic result stand as evidence; both real
+corpora are wired up and cheap to run.
+
+**Silent corruption outranks crashes.** The worst three defects found here all
+reported success while returning wrong answers: `converged=True` on a collapsed
+attractor, `improved=True` while training on 1e6-magnitude garbage, and
+`load_state_dict` restoring zero padding as memories that took 100% of the
+attention mass. Prefer probes that check *values*, not shapes and exit codes.
+
+## 6. Review tickets 09-13: the Hopfield layer measured against its baselines
+
+All thirteen review tickets are now implemented. Tickets 01-08 improved the
+harness; 09-13 asked the question those improvements made answerable — **does the
+attractor layer do anything cosine kNN does not?** Full detail in RESULTS.md
+Part VIII; the operational summary is here.
+
+**The answer is no, on both corpora, in every test that has a baseline.** Retrieval
+ties at hit@1 and loses 0.10-0.17 below it (VIII.1). Pattern completion loses to a
+one-shot lookup on the identical degraded cue in 45 of 48 cells (VIII.2). Gist
+recall loses to a plain unweighted average of the same neighbours (VIII.3). A
+learned read-in memorises 12 situations and generalises worse than not training at
+all (VIII.5).
+
+**Every gain this project has ever measured belongs to the embedding, not the
+dynamics** — dimension, whitening, an honest IDF, and fixing defects. Whitening is
+still the one lever that survives a powered test (+0.036 hit@1 on LoCoMo,
+p=0.0001), and it lifts the cosine ceiling by the same amount it lifts the
+Hopfield arm.
+
+### What a future session should know before re-opening any of this
+
+- **Pin the thread count.** `--threads` defaults to 6 on every DG-bearing harness.
+  DG/SEPARATED numbers are not reproducible across thread counts (VIII.0 defect 2)
+  and a published DG figure without its thread count cannot be checked by anyone.
+- **The one unexplored positive is in VIII.4.** At beta=8 the energy decorrelates
+  from cosine (rho 0.999 -> 0.29) and four signals survive Bonferroni in the full
+  system, the largest +0.069 AUC. Note the corroboration split: the B-baseline
+  effect (+0.063) is backed out-of-fold (+0.022) while the larger B-whitened one
+  (+0.069) is not (-0.003). Chase the corroborated one. But beta=8 is where retrieval collapses (hit@1 0.004). The untested
+  idea this suggests: **settle at beta=8 to decide *whether* to answer and at
+  beta=128 to decide *what* to answer.** Abstention and retrieval are separate
+  reads and nothing forces them to share a temperature. That is a design proposal,
+  not a result — Protocol B also carries an uncontrolled question-length confound
+  (AUC 0.421), and it is not comparable to IV.1 by construction.
+- **Two completion cells are positive on both corpora** (+0.005 LoCoMo, +0.011
+  QMSum), in the same sparse-key/active-units/5%-kept cell — the exact regime the
+  original synthetic claim was made in. (A third, +0.001 on QMSum dense coords at
+  50% kept, is a single question at n=1000 and is noise.) Inside the noise floor, no paired
+  significance test available. A reason to measure again, not a result.
+- **The embedder is still LSA-1024.** Every negative result above is a negative
+  result *against a weak embedder*. BGE-small is now in the local HF cache and
+  Protocol A already drives it. Re-running VIII.1 on real sentence embeddings is
+  the single highest-value follow-up, because it is the one thing that could
+  change the verdict rather than confirm it.
+- **Do not report a diverged optimisation as a mechanism failure.** VIII.5's first
+  run used lr=0.1 and diverged; the diverged log is kept in
+  `experiments/results/kv_learned_readin_t6.log` as the record. Learning rate was
+  re-selected on **training loss only** — selecting it on the held-out metric would
+  be tuning on the test set.
+
+### Trap added by this round
+
+**A baseline is not optional, and its absence is invisible.** Section 4's
+completion result was not wrong — those occlusion numbers reproduce on real data,
+and in the sparse-key protocol they are *better* than the synthetic ones. It was
+unfalsifiable, because nothing was measured alongside it. Three of this project's
+headline claims survived for months purely because the obvious control was never
+run. When a mechanism "works", the question is not "what did it score" but "what
+did the dumbest possible alternative score on exactly the same inputs".

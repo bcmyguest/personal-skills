@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# third-party benchmark data; experiments/locomo.py prints the fetch command
+experiments/data/

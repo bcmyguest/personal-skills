@@ -1,0 +1,282 @@
+{
+  "arms": {
+    "DG (sparse key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.629,
+        "converged": 0.999,
+        "cosine": 0.836,
+        "cue_cos": 0.21901476851850749,
+        "iters": 3.599,
+        "mixture": 0.362,
+        "n": 1000,
+        "units": 12.636
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.837,
+        "converged": 1.0,
+        "cosine": 0.848,
+        "cue_cos": 0.3125039566606283,
+        "iters": 3.079,
+        "mixture": 0.172,
+        "n": 1000,
+        "units": 25.356
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 0.846,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.44534748658537865,
+        "iters": 2.56,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 51.186
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 0.846,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.5477698204517365,
+        "iters": 2.196,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 77.11
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.7073930680155754,
+        "iters": 2.056,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 128.407
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.8946923995018006,
+        "iters": 2.015,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 204.998
+      }
+    },
+    "DG (sparse key) [units]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.836,
+        "cue_cos": 0.21901476851850749,
+        "iters": 3.159,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 12.636
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.848,
+        "cue_cos": 0.3125039566606283,
+        "iters": 3.032,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 25.356
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.44534748658537865,
+        "iters": 2.542,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 51.186
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.5477698204517365,
+        "iters": 2.182,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 77.11
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.7073930680155754,
+        "iters": 2.049,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 128.407
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.8946923995018006,
+        "iters": 2.013,
+        "mixture": 0.164,
+        "n": 1000,
+        "units": 204.998
+      }
+    },
+    "baseline (dense key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.418,
+        "converged": 0.997,
+        "cosine": 0.627,
+        "cue_cos": 0.21111693159490824,
+        "iters": 4.169,
+        "mixture": 0.455,
+        "n": 1000,
+        "units": 51.282
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.675,
+        "converged": 0.999,
+        "cosine": 0.721,
+        "cue_cos": 0.3008101080916822,
+        "iters": 3.512,
+        "mixture": 0.289,
+        "n": 1000,
+        "units": 102.44
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 0.769,
+        "converged": 1.0,
+        "cosine": 0.786,
+        "cue_cos": 0.4340421935245395,
+        "iters": 3.106,
+        "mixture": 0.22,
+        "n": 1000,
+        "units": 205.28
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 0.816,
+        "converged": 0.999,
+        "cosine": 0.819,
+        "cue_cos": 0.5352490588426589,
+        "iters": 2.638,
+        "mixture": 0.19,
+        "n": 1000,
+        "units": 308.542
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 0.844,
+        "converged": 1.0,
+        "cosine": 0.843,
+        "cue_cos": 0.7029278669655323,
+        "iters": 2.33,
+        "mixture": 0.171,
+        "n": 1000,
+        "units": 513.897
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 0.846,
+        "converged": 1.0,
+        "cosine": 0.847,
+        "cue_cos": 0.8979029830098152,
+        "iters": 2.12,
+        "mixture": 0.171,
+        "n": 1000,
+        "units": 820.009
+      }
+    },
+    "whitened (dense key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.767,
+        "converged": 1.0,
+        "cosine": 0.821,
+        "cue_cos": 0.22111044326797127,
+        "iters": 3.472,
+        "mixture": 0.229,
+        "n": 1000,
+        "units": 51.282
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.83,
+        "converged": 1.0,
+        "cosine": 0.84,
+        "cue_cos": 0.31439692750573156,
+        "iters": 3.114,
+        "mixture": 0.18,
+        "n": 1000,
+        "units": 102.44
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 0.845,
+        "converged": 1.0,
+        "cosine": 0.847,
+        "cue_cos": 0.44637651593983174,
+        "iters": 2.474,
+        "mixture": 0.171,
+        "n": 1000,
+        "units": 205.28
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 0.846,
+        "converged": 1.0,
+        "cosine": 0.848,
+        "cue_cos": 0.5481289329230785,
+        "iters": 2.248,
+        "mixture": 0.17,
+        "n": 1000,
+        "units": 308.542
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.7074209834039211,
+        "iters": 2.113,
+        "mixture": 0.168,
+        "n": 1000,
+        "units": 513.897
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 0.847,
+        "converged": 1.0,
+        "cosine": 0.849,
+        "cue_cos": 0.896019371688366,
+        "iters": 2.042,
+        "mixture": 0.168,
+        "n": 1000,
+        "units": 820.009
+      }
+    }
+  },
+  "beta": 128.0,
+  "conversations": 25,
+  "corpus": "qmsum",
+  "dim": 1024,
+  "threads": 6,
+  "turns": 14431
+}
