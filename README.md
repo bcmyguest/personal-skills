@@ -27,6 +27,7 @@ truth, easy updates), or copies with `--copy` where symlinks aren't supported. S
 | `release-setup` | Release automation from Conventional Commits — canonical git-cliff config + GitLab tag/release pipeline |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
+| `rigs` | Install OpenRig, hand a goal to its operator, and follow a coding-agent team's work (vendored from OpenRig 0.6.7) |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `rust-setup` | Scaffold a Rust repo from shipped templates — CI, auto-releases, crates.io Trusted Publishing |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |

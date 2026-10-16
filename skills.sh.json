@@ -4,43 +4,67 @@
   "groupings": [
     {
       "title": "Python",
-      "description": "Python project tooling with uv — scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.",
-      "skills": ["uv-setup", "uv-develop", "pre-commit-setup"]
+      "description": "Python project tooling with uv \u2014 scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.",
+      "skills": [
+        "uv-setup",
+        "uv-develop",
+        "pre-commit-setup"
+      ]
     },
     {
       "title": "Agent workflow",
-      "description": "Session helpers — tracking upstream GitHub issues, PRs, and releases you're waiting on, and assigning CODEOWNERS reviewers to your GitLab MRs.",
-      "skills": ["watchlist", "assign-mr-reviewers"]
+      "description": "Session helpers \u2014 tracking upstream GitHub issues, PRs, and releases you're waiting on, and assigning CODEOWNERS reviewers to your GitLab MRs, and running OpenRig coding-agent teams.",
+      "skills": [
+        "watchlist",
+        "assign-mr-reviewers",
+        "rigs"
+      ]
     },
     {
       "title": "Rust",
-      "description": "Scaffold a Rust repo from shipped templates — CI, pre-commit + Conventional Commits, Dependabot, git-cliff auto-releases, and crates.io Trusted Publishing.",
-      "skills": ["rust-setup"]
+      "description": "Scaffold a Rust repo from shipped templates \u2014 CI, pre-commit + Conventional Commits, Dependabot, git-cliff auto-releases, and crates.io Trusted Publishing.",
+      "skills": [
+        "rust-setup"
+      ]
     },
     {
       "title": "Release automation",
-      "description": "Automated releases from Conventional Commits with git-cliff — GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).",
-      "skills": ["release-setup"]
+      "description": "Automated releases from Conventional Commits with git-cliff \u2014 GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).",
+      "skills": [
+        "release-setup"
+      ]
     },
     {
       "title": "Frontend",
       "description": "Scaffold a React + TypeScript repo with Vite, and refactor existing frontend code as a senior engineer.",
-      "skills": ["react-ts-setup", "senior-frontend-refactor"]
+      "skills": [
+        "react-ts-setup",
+        "senior-frontend-refactor"
+      ]
     },
     {
       "title": "Audits",
-      "description": "Ruthless top-N codebase audits — find and verify the 1-3 worst security vulnerabilities or efficiency problems via a capped multi-agent Sonnet workflow.",
-      "skills": ["security-audit", "efficiency-audit"]
+      "description": "Ruthless top-N codebase audits \u2014 find and verify the 1-3 worst security vulnerabilities or efficiency problems via a capped multi-agent Sonnet workflow.",
+      "skills": [
+        "security-audit",
+        "efficiency-audit"
+      ]
     },
     {
       "title": "Debugging",
-      "description": "Debugging discipline — hypothesis-first rapid diagnosis, and strict reproduce-verify workflow for any bug.",
-      "skills": ["fast-hypothesis", "reproduce-bug"]
+      "description": "Debugging discipline \u2014 hypothesis-first rapid diagnosis, and strict reproduce-verify workflow for any bug.",
+      "skills": [
+        "fast-hypothesis",
+        "reproduce-bug"
+      ]
     },
     {
       "title": "Ops",
-      "description": "Personal infra helpers — scaffold Ansible roles and diagnose lemonade-server.",
-      "skills": ["add-ansible-role", "debug-lemonade"]
+      "description": "Personal infra helpers \u2014 scaffold Ansible roles and diagnose lemonade-server.",
+      "skills": [
+        "add-ansible-role",
+        "debug-lemonade"
+      ]
     }
   ]
 }
