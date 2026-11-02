@@ -77,7 +77,7 @@ flowchart LR
 
 ### fix-defect
 
-Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/fix-defect.dot` (worker `diagnose-failure`, reviewers `audit-agent-diff`).
+Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/fix-defect.dot`, or install it as a saved team (see README) and use `--team fix-defect` (worker `diagnose-failure`, reviewers `audit-agent-diff`).
 
 ```mermaid
 flowchart LR
@@ -123,7 +123,7 @@ flowchart LR
 
 ### port
 
-Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/port.dot` (worker `port-changes`, reviewers `audit-agent-diff`).
+Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/port.dot`, or install it as a saved team (see README) and use `--team port` (worker `port-changes`, reviewers `audit-agent-diff`).
 
 ```mermaid
 flowchart LR
@@ -138,7 +138,7 @@ flowchart LR
 
 ### ui
 
-Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/ui.dot` (worker `match-ui-to-reference`, reviewers `audit-agent-diff`).
+Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/ui.dot`, or install it as a saved team (see README) and use `--team ui` (worker `match-ui-to-reference`, reviewers `audit-agent-diff`).
 
 ```mermaid
 flowchart LR
@@ -178,7 +178,7 @@ flowchart LR
 
 ### report-review
 
-Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/report-review.dot` (worker `write-evidence-report`, reviewers `independent-review`).
+Runnable with wteam: `wteam run --team <path to this repo>/chains/teams/report-review.dot`, or install it as a saved team (see README) and use `--team report-review` (worker `write-evidence-report`, reviewers `independent-review`).
 
 ```mermaid
 flowchart LR

@@ -1,6 +1,7 @@
 # wteam phase: three fresh-context reviewers on a non-code artifact.
 # Install: copy this folder's phases/ and roles/ into $WTEAM_CONFIG_DIR (default ~/.config/wteam).
 # Run: wteam phase artifact-review --input <path>
+description = "Three fresh reviewers check a non-code artifact (ADR, report, doc): claims against evidence, the strongest counter-case, and scope. Use with --input for deliverables that are not code."
 personas = ["artifact-claims", "artifact-critic", "artifact-scope"]
 requires_input = true
 brief = """
