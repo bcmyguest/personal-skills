@@ -3,6 +3,35 @@
   "notGrouped": "bottom",
   "groupings": [
     {
+      "title": "Changes",
+      "description": "Audit an agent-written diff for overreach, port selected work across branches, match a UI to its design, and land exactly the intended change.",
+      "skills": [
+        "audit-agent-diff",
+        "port-changes",
+        "match-ui-to-reference",
+        "land-change"
+      ]
+    },
+    {
+      "title": "Decisions and review",
+      "description": "Research options with primary sources, settle design choices in question rounds, get an independent verdict, and brief the next agent.",
+      "skills": [
+        "research-options",
+        "resolve-design-decisions",
+        "independent-review",
+        "brief-agent"
+      ]
+    },
+    {
+      "title": "Experiments",
+      "description": "Pre-register a comparison, run it honestly, and publish what the evidence supports.",
+      "skills": [
+        "plan-experiment",
+        "run-experiment",
+        "write-evidence-report"
+      ]
+    },
+    {
       "title": "Python",
       "description": "Python project tooling with uv \u2014 scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.",
       "skills": [
@@ -52,10 +81,10 @@
     },
     {
       "title": "Debugging",
-      "description": "Debugging discipline \u2014 hypothesis-first rapid diagnosis, and strict reproduce-verify workflow for any bug.",
+      "description": "Find and fix the cause of a failure, and check whether a number is real before trusting it.",
       "skills": [
-        "fast-hypothesis",
-        "reproduce-bug"
+        "diagnose-failure",
+        "sanity-check-numbers"
       ]
     },
     {

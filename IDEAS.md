@@ -39,26 +39,8 @@ Auto-run ruff + pyrefly after every edit in Python repos:
 
 These have been created as executable skills.
 
-### fast-hypothesis ✅
+### diagnose-failure ✅
 
-**Location**: [`skills/fast-hypothesis/SKILL.md`](skills/fast-hypothesis/SKILL.md)
+**Location**: [`skills/diagnose-failure/SKILL.md`](skills/diagnose-failure/SKILL.md)
 
-**Description**: Rapid bug diagnosis—form one hypothesis and test it before exploring further
-
-Constrains diagnosis to hypothesis-first mode: form your best single hypothesis, test it with 1-2 commands, propose a fix, validate.
-
-Pairs with MEMORY.md Debugging Workflow rule.
-
-### reproduce-bug ✅
-
-**Location**: [`skills/reproduce-bug/SKILL.md`](skills/reproduce-bug/SKILL.md)
-
-**Description**: Debug any bug using strict reproduce-verify discipline
-
-Generic reproduction-verify framework for any bug (not toolchain-specific):
-1. Reproduce the exact failure (show complete output)
-2. Form ONE hypothesis at a time
-3. Test each hypothesis before acting
-4. Never claim a fix without re-running the original failure case and showing success
-
-Applies to Python, Node, Rust, system bugs—anything reproducible.
+Replaces `fast-hypothesis` and `reproduce-bug`: one hypothesis tested first, with a strict reproduce-verify path when a reliable local repro exists.

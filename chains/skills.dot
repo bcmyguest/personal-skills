@@ -1,0 +1,97 @@
+// Skill relationship registry. scripts/chains.py renders CHAINS.md, the README
+// "Skill chains" section, and chains/teams/*.dot from this file.
+//
+// Node type: skill (skills/<id>/), external (another repo or tool), action (not a skill).
+// Edge rel: prerequisite | transition | suggested | alternative.
+// Edge origin: observed (seen in work artifacts) | inferred (added during design).
+// Edge source: repo file#anchor that states it; defaults to skills/<from>/SKILL.md#next.
+// Graph "team:<workflow>": worker skill then reviewer skills, each step a registry edge.
+digraph skills {
+  graph [
+    "team:fix-defect"="diagnose-failure > audit-agent-diff",
+    "team:port"="port-changes > audit-agent-diff",
+    "team:ui"="match-ui-to-reference > audit-agent-diff",
+    "team:report-review"="write-evidence-report > independent-review"
+  ]
+
+  "diagnose-failure"         [type=skill]
+  "sanity-check-numbers"     [type=skill]
+  "audit-agent-diff"         [type=skill]
+  "land-change"              [type=skill]
+  "port-changes"             [type=skill]
+  "match-ui-to-reference"    [type=skill]
+  "resolve-design-decisions" [type=skill]
+  "research-options"         [type=skill]
+  "independent-review"       [type=skill]
+  "brief-agent"              [type=skill]
+  "plan-experiment"          [type=skill]
+  "run-experiment"           [type=skill]
+  "write-evidence-report"    [type=skill]
+  watchlist                  [type=skill]
+
+  wteam            [type=external, label="wteam (bcmyguest/wteam)"]
+  refine           [type=external, label="refine (bcmyguest/wteam)"]
+  "to-spec"        [type=external, label="to-spec (mattpocock/skills)"]
+  "to-tickets"     [type=external, label="to-tickets (mattpocock/skills)"]
+  implement        [type=external, label="implement (mattpocock/skills)"]
+  bugbot           [type=external, label="Bugbot"]
+
+  "spend-approval" [type=action, shape=hexagon, label="user approves spend"]
+  "next-agent"     [type=action, shape=hexagon, label="start next agent"]
+
+  "diagnose-failure" -> "audit-agent-diff"
+    [rel=transition, origin=observed, artifact="fix and live check", workflows="fix-defect"]
+  "diagnose-failure" -> refine
+    [rel=alternative, origin=inferred, artifact="misbehaving agent pipeline", workflows="fix-defect"]
+  "sanity-check-numbers" -> "diagnose-failure"
+    [rel=transition, origin=observed, artifact="wrong number, traced definition", workflows="fix-defect"]
+  "sanity-check-numbers" -> "write-evidence-report"
+    [rel=transition, origin=observed, artifact="verified numbers", workflows="experiment"]
+  "port-changes" -> "audit-agent-diff"
+    [rel=transition, origin=observed, artifact="applied subset, left-out list", workflows="port"]
+  "match-ui-to-reference" -> "audit-agent-diff"
+    [rel=transition, origin=observed, artifact="screenshots, resolved deltas", workflows="ui"]
+  "audit-agent-diff" -> "land-change"
+    [rel=transition, origin=observed, artifact="clean diff", workflows="fix-defect,port,ui"]
+  "audit-agent-diff" -> bugbot
+    [rel=alternative, origin=inferred, artifact="diff", workflows="fix-defect"]
+
+  "research-options" -> "independent-review"
+    [rel=transition, origin=observed, artifact="findings or ADR", workflows="decide-and-build"]
+  "research-options" -> "resolve-design-decisions"
+    [rel=transition, origin=observed, artifact="facts per option", workflows="decide-and-build"]
+  "research-options" -> watchlist
+    [rel=suggested, origin=inferred, artifact="pinned item", workflows="decide-and-build"]
+  "independent-review" -> "resolve-design-decisions"
+    [rel=suggested, origin=inferred, artifact="verdict", workflows="decide-and-build"]
+  "independent-review" -> "land-change"
+    [rel=suggested, origin=inferred, artifact="approved artifact", workflows="report-review"]
+  "resolve-design-decisions" -> "to-spec"
+    [rel=suggested, origin=inferred, artifact="decision record", workflows="decide-and-build"]
+  "to-spec" -> "to-tickets"
+    [rel=transition, origin=inferred, artifact="spec", workflows="decide-and-build",
+     source="skills/resolve-design-decisions/SKILL.md#next"]
+  "to-tickets" -> wteam
+    [rel=suggested, origin=inferred, artifact="tickets", workflows="decide-and-build",
+     source="skills/resolve-design-decisions/SKILL.md#next"]
+  "to-tickets" -> implement
+    [rel=alternative, origin=inferred, artifact="tickets", workflows="decide-and-build",
+     source="skills/resolve-design-decisions/SKILL.md#next"]
+
+  "plan-experiment" -> "spend-approval"
+    [rel=transition, origin=observed, artifact="pre-registered plan", workflows="experiment"]
+  "plan-experiment" -> "run-experiment"
+    [rel=prerequisite, origin=observed, artifact="approved plan", workflows="experiment"]
+  "spend-approval" -> "run-experiment"
+    [rel=transition, origin=observed, artifact="approved plan and caps", workflows="experiment",
+     source="skills/run-experiment/SKILL.md#method"]
+  "run-experiment" -> "sanity-check-numbers"
+    [rel=transition, origin=observed, artifact="result rows", workflows="experiment"]
+  "run-experiment" -> refine
+    [rel=suggested, origin=inferred, artifact="stalled pipeline arm", workflows="experiment"]
+  "write-evidence-report" -> "independent-review"
+    [rel=transition, origin=inferred, artifact="draft", workflows="experiment,report-review"]
+
+  "brief-agent" -> "next-agent"
+    [rel=suggested, origin=inferred, artifact="brief", workflows="handoff"]
+}
