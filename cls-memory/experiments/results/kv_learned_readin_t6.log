@@ -1,0 +1,42 @@
+torch threads: 6
+
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]
+Loading weights:  66%|██████▌   | 180/272 [00:00<00:00, 1798.37it/s]
+Loading weights: 100%|██████████| 272/272 [00:00<00:00, 1926.45it/s]
+model HuggingFaceTB/SmolLM2-135M-Instruct  layers 30  rules 26/26  situations 16/16 (smoke subset)
+
+training LearnedReadIn: 249600 params, 60 steps, lr=0.1
+  loss  step 0: 3.6300  ->  step 59: 5.8553
+
+=== COMPRESSION (Part VII's metric, same matched-noise controls, kv_learned_all added) ===
+  arm                  nll     fc   margin  tokens  slots  compression
+  none               3.612  0.500   +0.100       0      0            -
+  kv_pool1           3.606  0.500   +0.062       0     26        23.5x
+  noise/1            8.786  0.375   -0.193       0     26        23.5x
+  kv_pool2           3.632  0.500   +0.040       0     52        11.7x
+  noise/2            9.975  0.438   -0.321       0     52        11.7x
+  kv_pool4           3.752  0.500   -0.033       0    104         5.9x
+  noise/4           10.898  0.375   -0.246       0    104         5.9x
+  kv_pool8           3.988  0.312   -0.235       0    208         2.9x
+  noise/8           11.712  0.375   -0.527       0    208         2.9x
+  kv_pool12          3.119  0.250   -0.370       0    312         2.0x
+  noise/12          12.141  0.375   -0.420       0    312         2.0x
+  kv_pool16          2.700  0.250   -0.447       0    414         1.5x
+  noise/16          12.821  0.375   -0.555       0    414         1.5x
+  kv_pool20          2.529  0.250   -0.394       0    488         1.2x
+  noise/20          13.054  0.312   -0.920       0    488         1.2x
+  kv_pool24          2.243  0.312   -0.261       0    530         1.2x
+  noise/24          12.678  0.375   -0.264       0    530         1.2x
+  kv_super_all       3.625  0.562   +0.085       0      1       610.0x
+  kv_super_k4        3.628  0.500   +0.082       0      1       610.0x
+  noise/1slot        3.888  0.562   +0.043       0      1       610.0x
+  kv_learned_all     6.231  0.438   -0.147       0      1       610.0x
+  noise/learned     15.292  0.250   -0.428       0      1       610.0x
+
+=== GENERALIZATION (12 train / 4 held-out situations) ===
+  arm                   train nll  held-out nll
+  kv_learned_all            5.760         7.645
+  kv_super_all (untrained)      3.630         3.609
+
+=== ZERO-CONTEXT-TOKENS (VII.1, re-confirmed, independent of the above) ===
+  text 610 tokens -> kv_full 0 tokens, same 610 slots: dNLL -1.490e-07

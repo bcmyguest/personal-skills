@@ -1,0 +1,282 @@
+{
+  "arms": {
+    "DG (sparse key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.8125,
+        "converged": 1.0,
+        "cosine": 0.995,
+        "cue_cos": 0.22038498619571328,
+        "iters": 3.675,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 12.6
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.3134828667715192,
+        "iters": 3.02,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 25.2625
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.4477130434662104,
+        "iters": 2.2525,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 51.2875
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.5472118237614632,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 77.045
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.708023725003004,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 128.66
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.8935908518731595,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 204.8475
+      }
+    },
+    "DG (sparse key) [units]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 0.995,
+        "cue_cos": 0.22038498619571328,
+        "iters": 3.1075,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 12.6
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.3134828667715192,
+        "iters": 2.995,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 25.2625
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.4477130434662104,
+        "iters": 2.2425,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 51.2875
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.5472118237614632,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 77.045
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.708023725003004,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 128.66
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.8935908518731595,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 204.8475
+      }
+    },
+    "baseline (dense key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.7325,
+        "converged": 1.0,
+        "cosine": 0.9475,
+        "cue_cos": 0.22054102689027785,
+        "iters": 3.64,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 51.1025
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.9775,
+        "converged": 1.0,
+        "cosine": 0.9925,
+        "cue_cos": 0.31272262148559093,
+        "iters": 3.045,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 102.59
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.4450012228637934,
+        "iters": 2.3375,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 206.1
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.5451727626472711,
+        "iters": 2.0125,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 309.4475
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.7068943458795548,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 514.4075
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.8938800731301307,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 819.7875
+      }
+    },
+    "whitened (dense key) [coords]": {
+      "0.05": {
+        "clamp_exact": 1.0,
+        "completed": 0.8875,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.2200647062063217,
+        "iters": 3.39,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 51.1025
+      },
+      "0.1": {
+        "clamp_exact": 1.0,
+        "completed": 0.9925,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.3132969232648611,
+        "iters": 3.005,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 102.59
+      },
+      "0.2": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.4460447240620852,
+        "iters": 2.075,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 206.1
+      },
+      "0.3": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.547053937613964,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 309.4475
+      },
+      "0.5": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.7066902621090412,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 514.4075
+      },
+      "0.8": {
+        "clamp_exact": 1.0,
+        "completed": 1.0,
+        "converged": 1.0,
+        "cosine": 1.0,
+        "cue_cos": 0.8937603631615638,
+        "iters": 2.0,
+        "mixture": 0.0,
+        "n": 400,
+        "units": 819.7875
+      }
+    }
+  },
+  "beta": 128.0,
+  "conversations": 10,
+  "corpus": "locomo",
+  "dim": 1024,
+  "threads": 6,
+  "turns": 5882
+}

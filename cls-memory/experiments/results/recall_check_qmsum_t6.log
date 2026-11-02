@@ -1,0 +1,18 @@
+!! single-corpus run (qmsum); the both-corpora overfitting guard is NOT in force for these numbers
+torch threads: 6
+QMSum: 6 conversations, 3473 turns
+
+==============================================================================
+QMSum
+==============================================================================
+  configuration                         @1       @5      @10   aniso_emb  aniso_key
+  ----------------------------------------------------------------------------------------
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+  was:  LSA-256, separated, beta=8   0.079    0.158    0.237       0.072      0.151   (38 q, 43s)
+    +  beta=128                      0.263    0.500    0.553       0.072      0.151   (38 q, 52s)
+    +  key=embedding                 0.211    0.553    0.684       0.072      0.072   (38 q, 69s)
+  now:  +  LSA-1024                  0.447    0.658    0.684       0.047      0.047   (38 q, 256s)
+    +  whitened                      0.474    0.684    0.711       0.001      0.001   (38 q, 217s)
+    +  key=separated                 0.474    0.684    0.711       0.047      0.139   (38 q, 340s)
+    +  key=separated, whitened       0.447    0.711    0.816       0.001      0.118   (38 q, 277s)

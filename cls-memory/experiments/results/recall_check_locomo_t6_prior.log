@@ -1,0 +1,46 @@
+########## recall_check --corpus locomo (Part III LoCoMo)
+!! single-corpus run (locomo); the both-corpora overfitting guard is NOT in force for these numbers
+LoCoMo: 3 conversations, 1451 turns
+
+==============================================================================
+LoCoMo
+==============================================================================
+  configuration                         @1       @5      @10   aniso_emb  aniso_key
+  ----------------------------------------------------------------------------------------
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+  was:  LSA-256, separated, beta=8   0.002    0.010    0.026       0.080      0.152   (494 q, 35s)
+    +  beta=128                      0.221    0.279    0.354       0.080      0.152   (494 q, 35s)
+    +  key=embedding                 0.217    0.289    0.340       0.080      0.080   (494 q, 31s)
+  now:  +  LSA-1024                  0.306    0.395    0.439       0.041      0.041   (494 q, 137s)
+    +  whitened                      0.342    0.433    0.478      -0.001     -0.001   (494 q, 74s)
+    +  key=separated                 0.298    0.362    0.399       0.041      0.134   (494 q, 70s)
+    +  key=separated, whitened       0.318    0.362    0.383      -0.001      0.117   (494 q, 95s)
+
+########## separation_check --corpus locomo (ticket 08 table)
+locomo: 3 conversations, 1451 turns
+
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+  baseline (LSA-1024, key=embedding)    0.306   0.395   0.439   aniso_emb +0.041  aniso_key +0.041   (494 q, 46s)
+  whitened  (raises separation)         0.342   0.433   0.478   aniso_emb -0.001  aniso_key -0.001   (494 q, 45s)
+  DG key    (LOWERS separation)         0.298   0.362   0.399   aniso_emb +0.041  aniso_key +0.134   (494 q, 83s)
+  both                                  0.318   0.362   0.383   aniso_emb -0.001  aniso_key +0.117   (494 q, 57s)
+
+  exact paired McNemar vs baseline, hit@1 (n=494):
+    arm                                     delta   b01   b10         p  verdict
+    whitened  (raises separation)          +0.036    20     2    0.0001  RESOLVED
+    DG key    (LOWERS separation)          -0.008    13    17    0.5847  tie (not resolvable)
+    both                                   +0.012    18    12    0.3616  tie (not resolvable)
+
+  exact paired McNemar vs baseline, hit@10 (n=494):
+    arm                                     delta   b01   b10         p  verdict
+    whitened  (raises separation)          +0.038    34    15    0.0094  RESOLVED
+    DG key    (LOWERS separation)          -0.040    15    35    0.0066  RESOLVED
+    both                                   -0.057    20    48    0.0009  RESOLVED
+
+  separation actually achieved (lower anisotropy = better separated):
+    baseline (LSA-1024, key=embedding)   aniso_key +0.041
+    whitened  (raises separation)        aniso_key -0.001
+    DG key    (LOWERS separation)        aniso_key +0.134
+    both                                 aniso_key +0.117

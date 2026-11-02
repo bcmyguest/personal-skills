@@ -1,0 +1,20 @@
+qmsum: 25 conversations, LSA-1024, top_k=5, min_evidence=2, 6 threads
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+
+165 multi-evidence questions
+  arm               coverage   full     top1   eff_n  mixture
+  recall (default)     0.068  0.000    0.990   1.059    0.012
+  centroid             0.070  0.006       --      --       --  (task metric is beta-invariant; see below for its diagnostics at each swept beta)
+
+  gist, per beta (task metric + its own settled-state diagnostics):
+    2.0                0.017  0.000    0.004 521.514    1.000
+    8.0                0.017  0.000    0.022 191.367    1.000
+    32.0               0.064  0.000    0.935   1.820    0.079
+    factor=0.15        0.043  0.000    0.575  19.034    0.455
+
+  centroid diagnostics AT THE SAME beta (task metric unchanged -- only the lens moves):
+    2.0                   --     --    0.008 505.369    1.000
+    8.0                   --     --    0.093 201.742    1.000
+    32.0                  --     --    0.538   3.862    0.479
+    factor=0.15           --     --    0.386   8.802    0.818

@@ -1,0 +1,39 @@
+[project]
+name = "cls-memory"
+version = "0.1.0"
+description = "Organizational memory built on Complementary Learning Systems: a VAE neocortex and a Modern Hopfield hippocampus"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.0"]
+
+[project.optional-dependencies]
+# SentenceTransformerEmbedder (cls_memory/embeddings.py) -- shipped but
+# untested/untried, see HANDOFF.md §3.4.
+embeddings = ["sentence-transformers>=2.2"]
+# Required to run the real-embedding tests (tests/test_superposition.py) that
+# back RESULTS.md Part V, via experiments/recall_ablation.py's BGEEmbedder
+# (ONNX + tokenizers directly, no sentence-transformers/fastembed involved).
+# Without this extra, `uv run pytest` fails loudly on those tests rather than
+# skipping silently -- see issue 01.
+test-embeddings = ["onnxruntime>=1.15", "tokenizers>=0.15"]
+# `experiments/bge_base_probe.py` only -- the fastembed route to bge-base
+# (HANDOFF.md §3.1c). Nothing in the test suite needs it, but it IS installed
+# in a working dev venv, so `uv sync` without this extra prunes it and that
+# probe stops running. Declared so the pruning is recoverable.
+probes = ["fastembed>=0.3"]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cls_memory"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
