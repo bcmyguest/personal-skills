@@ -1,7 +1,8 @@
 // experiment: plan, the user's spend approval, run, report. One ticket walks every step and
 // commits once at the end. run and report continue the previous step's session while it fits.
+// A ticket whose results already exist starts at report: set **Start at:** report.
 digraph experiment {
-  graph [description="Plan an experiment, get the user's spend approval, run it, check the numbers, and write up what the evidence supports. Steps: plan-experiment, approval gate, run-experiment (checked with sanity-check-numbers), write-evidence-report (reviewed with independent-review).", max_visits=3, handoff_tokens=150000]
+  graph [description="Plan an experiment, get the user's spend approval, run it, check the numbers, and write up what the evidence supports. Steps: plan-experiment, approval gate, run-experiment (checked with sanity-check-numbers), write-evidence-report (reviewed with independent-review). A ticket whose results already exist starts at report.", max_visits=3, handoff_tokens=150000]
   planner        [agent="planner"]
   orchestrator   [agent="orchestrator"]
   plan           [agent="worker", count="$pairs", skill="plan-experiment", prompt="If the plan-experiment skill is not installed, read skills/plan-experiment/SKILL.md in bcmyguest/personal-skills."]

@@ -85,12 +85,8 @@ python3 scripts/test_chains.py       # check-mode and routing-example tests
 
 | Team | Path |
 | --- | --- |
-| `decide-and-build` | `research-options` → `independent-review` (review) → `resolve-design-decisions` → `independent-review` (review) |
+| `change` | the ticket's skill → `audit-agent-diff` (review) |
 | `experiment` | `plan-experiment` → `independent-review` (review) → gate *user approves spend* → `run-experiment` → `sanity-check-numbers` (review) → `write-evidence-report` → `independent-review` (review) |
-| `fix-defect` | `diagnose-failure` → `audit-agent-diff` (review) |
-| `port` | `port-changes` → `audit-agent-diff` (review) |
-| `report-review` | `write-evidence-report` → `independent-review` (review) |
-| `ui` | `match-ui-to-reference` → `audit-agent-diff` (review) |
 
 ```mermaid
 flowchart LR

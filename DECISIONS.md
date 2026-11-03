@@ -29,7 +29,7 @@ other machines or in ticket systems. Treat the method skills as a first cut on t
 | Independent review | Thin host-neutral skill; its wteam phase (`artifact-review`) ships as phase and role files in `wteam/phases/` and `wteam/roles/`, not as wteam code |
 | Agent-pipeline tuning | Folded into wteam's `refine` skill, generalised beyond wteam runs |
 | Chain source | The chains are wteam teams: hand-written `wteam/teams/<name>/team.dot`, imported by `scripts/install-wteam.sh` (copy, overwriting). The `chains/skills.dot` registry is gone, with its observed/inferred tags; hand-offs outside teams come from each skill's `## Next` |
-| Which chains are teams | fix-defect, port, ui, report-review, experiment, decide-and-build. `brief-agent` (handoff) has one step, so no team |
+| Which chains are teams | `change` (a defect, a port, or a UI match; the planner sets each ticket's `Skill:`) and `experiment` (plan, spend gate, run, report; a ticket whose results exist starts at `report`). Decisions are settled with the user during the wteam skill's intake, before planning, and `brief-agent` stays a skill with no team |
 | Multi-step teams | One worker node per step (wteam steps); the ticket commits once after the last step. A worker step may set `continue=true` to keep the previous step's session while it fits; reviewers always run as separate agents |
 | Decisions inside a team | The `decide` step asks its round by `wteam block`; answers return as a `wteam requeue --note`, which resumes the same step |
 | Team node prompts | wteam appends a node's `prompt=` to the agent's role prompt, keeping the verdict protocol |

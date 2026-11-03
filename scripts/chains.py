@@ -263,7 +263,7 @@ def validate(teams, skills):
         for nid, a in g["nodes"].items():
             if nid in CONTROL_ROLES or kind(a) != "agent":
                 continue
-            if a.get("skill") not in skills:
+            if a.get("skill") is not None and a.get("skill") not in skills:
                 errs.append(f"{where}: node {nid} has skill={a.get('skill')!r}, not a skill in skills/")
         step = None
         agents = [n for n in path if kind(g["nodes"][n]) == "agent"]
@@ -374,7 +374,8 @@ def steps_text(g):
         if kind(a) == "human":
             parts.append(f"gate *{a.get('label', n)}*")
         elif kind(a) == "agent":
-            parts.append(f"`{a.get('skill')}`" + ("" if is_step(g, n) else " (review)"))
+            skill = f"`{a['skill']}`" if a.get("skill") else "the ticket's skill"
+            parts.append(skill + ("" if is_step(g, n) else " (review)"))
     return " → ".join(parts)
 
 

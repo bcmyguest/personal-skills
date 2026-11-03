@@ -1,0 +1,14 @@
+// change: one worker step whose skill comes from the ticket, reviewed against the diff.
+// A defect, a port and a UI match differ only in the ticket's Skill:.
+digraph change {
+  graph [description="Make a change a reviewer can check against the diff: fix a defect, port selected work, or match a UI to a reference. The planner sets each ticket's Skill: (diagnose-failure, port-changes, or match-ui-to-reference). Reviewed with audit-agent-diff.", max_visits=3, handoff_tokens=150000]
+  planner      [agent="planner"]
+  orchestrator [agent="orchestrator"]
+  worker       [agent="worker", count="$pairs", prompt="Follow the skill the ticket names. If it is not installed, read skills/<skill>/SKILL.md in bcmyguest/personal-skills."]
+  reviewer     [agent="reviewer", count="$pairs", skill="audit-agent-diff", prompt="If the audit-agent-diff skill is not installed, read skills/audit-agent-diff/SKILL.md in bcmyguest/personal-skills."]
+  orchestrator -> worker   [on=dispatch, kind=broadcast]
+  worker -> reviewer       [on=submit, kind=pair]
+  reviewer -> worker       [on=fail, kind=pair]
+  reviewer -> orchestrator [on=pass, kind=fan-in]
+  worker -> orchestrator   [on=blocked, kind=fan-in]
+}

@@ -50,8 +50,8 @@ class CheckMode(unittest.TestCase):
         self.assert_fails("CHAINS.md is stale")
 
     def test_team_step_with_unknown_skill(self):
-        self.edit("wteam/teams/port/team.dot", 'skill="port-changes"', 'skill="port-it"')
-        self.assert_fails("node worker has skill='port-it', not a skill in skills/")
+        self.edit("wteam/teams/change/team.dot", 'skill="audit-agent-diff"', 'skill="port-it"')
+        self.assert_fails("node reviewer has skill='port-it', not a skill in skills/")
 
     def test_next_item_with_unknown_relationship(self):
         self.edit("skills/brief-agent/SKILL.md", "- `next-agent` (suggested)", "- `next-agent` (maybe)")
@@ -62,8 +62,8 @@ class CheckMode(unittest.TestCase):
         self.assert_fails("Next `nowhere` is neither a skill here nor a known external")
 
     def test_team_hand_off_no_next_section_states(self):
-        self.edit("wteam/teams/port/team.dot", 'skill="audit-agent-diff"', 'skill="land-change"')
-        self.assert_fails("worker (port-changes) hands to reviewer (land-change)")
+        self.edit("wteam/teams/experiment/team.dot", 'skill="sanity-check-numbers"', 'skill="land-change"')
+        self.assert_fails("run (run-experiment) hands to run_review (land-change)")
 
     def test_later_step_may_rely_on_the_step_workers_next(self):
         # independent-review hands to run-experiment only through plan-experiment's Next.

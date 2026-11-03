@@ -10,32 +10,27 @@ Regenerate with `python3 scripts/chains.py`; verify with `python3 scripts/chains
 
 ## Teams
 
-### decide-and-build
+### change
 
-Research the options for a costly-to-reverse choice, then settle it with the user and record the decision. Steps: research-options (reviewed with independent-review), resolve-design-decisions (reviewed with independent-review). Stops at the decision record.
+Make a change a reviewer can check against the diff: fix a defect, port selected work, or match a UI to a reference. The planner sets each ticket's Skill: (diagnose-failure, port-changes, or match-ui-to-reference). Reviewed with audit-agent-diff.
 
-Path: `research-options` → `independent-review` (review) → `resolve-design-decisions` → `independent-review` (review).
+Path: the ticket's skill → `audit-agent-diff` (review).
 
 ```mermaid
 flowchart LR
-  research["research: research-options"]
-  research_review["research_review: independent-review"]
-  decide["decide: resolve-design-decisions"]
-  decide_review["decide_review: independent-review"]
+  worker["worker: "]
+  reviewer["reviewer: audit-agent-diff"]
   done(["commit"])
-  research -->|submit| research_review
-  research_review -->|pass| decide
-  decide -->|submit| decide_review
-  decide_review -->|pass| done
-  research_review -.->|fail| research
-  decide_review -.->|fail| decide
+  worker -->|submit| reviewer
+  reviewer -->|pass| done
+  reviewer -.->|fail| worker
   classDef step fill:#e8f0fe,stroke:#4a6fa5
-  class research,decide step
+  class worker step
 ```
 
 ### experiment
 
-Plan an experiment, get the user's spend approval, run it, check the numbers, and write up what the evidence supports. Steps: plan-experiment, approval gate, run-experiment (checked with sanity-check-numbers), write-evidence-report (reviewed with independent-review).
+Plan an experiment, get the user's spend approval, run it, check the numbers, and write up what the evidence supports. Steps: plan-experiment, approval gate, run-experiment (checked with sanity-check-numbers), write-evidence-report (reviewed with independent-review). A ticket whose results already exist starts at report.
 
 Path: `plan-experiment` → `independent-review` (review) → gate *user approves spend* → `run-experiment` → `sanity-check-numbers` (review) → `write-evidence-report` → `independent-review` (review).
 
@@ -61,78 +56,6 @@ flowchart LR
   report_review -.->|fail| report
   classDef step fill:#e8f0fe,stroke:#4a6fa5
   class plan,run,report step
-```
-
-### fix-defect
-
-Find the actual cause of a failure in a running system and fix that cause, not a symptom. Worker follows diagnose-failure; reviewed with audit-agent-diff.
-
-Path: `diagnose-failure` → `audit-agent-diff` (review).
-
-```mermaid
-flowchart LR
-  worker["worker: diagnose-failure"]
-  reviewer["reviewer: audit-agent-diff"]
-  done(["commit"])
-  worker -->|submit| reviewer
-  reviewer -->|pass| done
-  reviewer -.->|fail| worker
-  classDef step fill:#e8f0fe,stroke:#4a6fa5
-  class worker step
-```
-
-### port
-
-Bring selected work from another branch, PR, archive, or older architecture into the current line without dragging unwanted changes along. Worker follows port-changes; reviewed with audit-agent-diff.
-
-Path: `port-changes` → `audit-agent-diff` (review).
-
-```mermaid
-flowchart LR
-  worker["worker: port-changes"]
-  reviewer["reviewer: audit-agent-diff"]
-  done(["commit"])
-  worker -->|submit| reviewer
-  reviewer -->|pass| done
-  reviewer -.->|fail| worker
-  classDef step fill:#e8f0fe,stroke:#4a6fa5
-  class worker step
-```
-
-### report-review
-
-Publish results or capability claims that say exactly what the evidence supports. Worker follows write-evidence-report; reviewed with independent-review.
-
-Path: `write-evidence-report` → `independent-review` (review).
-
-```mermaid
-flowchart LR
-  worker["worker: write-evidence-report"]
-  reviewer["reviewer: independent-review"]
-  done(["commit"])
-  worker -->|submit| reviewer
-  reviewer -->|pass| done
-  reviewer -.->|fail| worker
-  classDef step fill:#e8f0fe,stroke:#4a6fa5
-  class worker step
-```
-
-### ui
-
-Converge a UI on a design reference through numbered deltas and visual proof. Worker follows match-ui-to-reference; reviewed with audit-agent-diff.
-
-Path: `match-ui-to-reference` → `audit-agent-diff` (review).
-
-```mermaid
-flowchart LR
-  worker["worker: match-ui-to-reference"]
-  reviewer["reviewer: audit-agent-diff"]
-  done(["commit"])
-  worker -->|submit| reviewer
-  reviewer -->|pass| done
-  reviewer -.->|fail| worker
-  classDef step fill:#e8f0fe,stroke:#4a6fa5
-  class worker step
 ```
 
 ## Hand-offs
