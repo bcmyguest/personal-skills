@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Each registry fault makes `chains.py --check` fail. Run: python3 scripts/test_chains.py"""
+"""Each chain fault makes `chains.py --check` fail. Run: python3 scripts/test_chains.py"""
 
 import re
 import shutil
@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-COPY = ["chains", "scripts", "skills", "CHAINS.md", "README.md"]
+COPY = ["chains", "scripts", "skills", "wteam", "CHAINS.md", "README.md"]
 
 
 class CheckMode(unittest.TestCase):
@@ -46,32 +46,29 @@ class CheckMode(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_stale_output(self):
-        self.edit("CHAINS.md", "## Legend", "## Legend (edited)")
+        self.edit("CHAINS.md", "## Teams", "## Teams (edited)")
         self.assert_fails("CHAINS.md is stale")
 
-    def test_unknown_skill_id(self):
-        self.edit("chains/skills.dot", '"land-change"              [type=skill]', '"land-it" [type=skill]')
-        self.assert_fails("skills/land-it/SKILL.md does not exist")
+    def test_team_step_with_unknown_skill(self):
+        self.edit("wteam/teams/port/team.dot", 'skill="port-changes"', 'skill="port-it"')
+        self.assert_fails("node worker has skill='port-it', not a skill in skills/")
 
-    def test_unclassified_relationship(self):
-        self.edit("chains/skills.dot", "rel=suggested, origin=inferred, artifact=\"brief\"", "origin=inferred, artifact=\"brief\"")
-        self.assert_fails("rel=None")
+    def test_next_item_with_unknown_relationship(self):
+        self.edit("skills/brief-agent/SKILL.md", "- `next-agent` (suggested)", "- `next-agent` (maybe)")
+        self.assert_fails("Next `next-agent` has (maybe)")
 
-    def test_missing_origin(self):
-        self.edit("chains/skills.dot", "rel=suggested, origin=inferred, artifact=\"brief\"", "rel=suggested, artifact=\"brief\"")
-        self.assert_fails("origin=None")
+    def test_next_item_with_unknown_target(self):
+        self.edit("skills/brief-agent/SKILL.md", "- `next-agent` (suggested)", "- `nowhere` (suggested)")
+        self.assert_fails("Next `nowhere` is neither a skill here nor a known external")
 
-    def test_broken_source_anchor(self):
-        self.edit("chains/skills.dot", "skills/run-experiment/SKILL.md#method", "skills/run-experiment/SKILL.md#nowhere")
-        self.assert_fails("has no #nowhere heading")
+    def test_team_hand_off_no_next_section_states(self):
+        self.edit("wteam/teams/port/team.dot", 'skill="audit-agent-diff"', 'skill="land-change"')
+        self.assert_fails("worker (port-changes) hands to reviewer (land-change)")
 
-    def test_next_section_out_of_sync(self):
-        self.edit("skills/brief-agent/SKILL.md", "- `next-agent` (suggested)", "- `land-change` (suggested)")
-        self.assert_fails("Next lists `land-change`")
-
-    def test_team_step_without_edge(self):
-        self.edit("chains/skills.dot", '"port-changes > audit-agent-diff"', '"port-changes > land-change"')
-        self.assert_fails("team:port: no transition port-changes -> land-change")
+    def test_later_step_may_rely_on_the_step_workers_next(self):
+        # independent-review hands to run-experiment only through plan-experiment's Next.
+        self.edit("skills/plan-experiment/SKILL.md", "- `run-experiment` (prerequisite): the approved plan.\n", "")
+        self.assert_fails("plan_review (independent-review) hands to run (run-experiment)")
 
 
 class Routing(unittest.TestCase):
@@ -79,7 +76,6 @@ class Routing(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         import chains
 
-        graph = chains.parse_dot(chains.REGISTRY.read_text())
         skills = chains.load_skills()
         text = (ROOT / "chains" / "routing.md").read_text()
         sections = dict(re.findall(r"^## (\S+)\n(.*?)(?=^## |\Z)", text, re.M | re.S))
@@ -88,7 +84,7 @@ class Routing(unittest.TestCase):
             self.assertIn(sid, sections, f"routing.md has no section for {sid}")
             self.assertIn("Routes here:", sections[sid], sid)
             self.assertIn("Near-misses:", sections[sid], sid)
-        known = set(skills) | set(graph["nodes"]) | {"none"}
+        known = set(skills) | set(chains.EXTERNAL) | {"none"}
         for target in re.findall(r"→ `([^`]+)`", text):
             self.assertIn(target, known, f"routing.md near-miss target {target} is unknown")
 

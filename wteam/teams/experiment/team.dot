@@ -1,0 +1,29 @@
+// experiment: plan, the user's spend approval, run, report. One ticket walks every step and
+// commits once at the end. run and report continue the previous step's session while it fits.
+digraph experiment {
+  graph [description="Plan an experiment, get the user's spend approval, run it, check the numbers, and write up what the evidence supports. Steps: plan-experiment, approval gate, run-experiment (checked with sanity-check-numbers), write-evidence-report (reviewed with independent-review).", max_visits=3, handoff_tokens=150000]
+  planner        [agent="planner"]
+  orchestrator   [agent="orchestrator"]
+  plan           [agent="worker", count="$pairs", skill="plan-experiment", prompt="If the plan-experiment skill is not installed, read skills/plan-experiment/SKILL.md in bcmyguest/personal-skills."]
+  plan_review    [agent="reviewer", count="$pairs", skill="independent-review", prompt="If the independent-review skill is not installed, read skills/independent-review/SKILL.md in bcmyguest/personal-skills."]
+  spend_approval [shape=hexagon, label="user approves spend"]
+  run            [agent="worker", count="$pairs", skill="run-experiment", continue=true, prompt="If the run-experiment skill is not installed, read skills/run-experiment/SKILL.md in bcmyguest/personal-skills."]
+  run_review     [agent="reviewer", count="$pairs", skill="sanity-check-numbers", prompt="If the sanity-check-numbers skill is not installed, read skills/sanity-check-numbers/SKILL.md in bcmyguest/personal-skills."]
+  report         [agent="worker", count="$pairs", skill="write-evidence-report", continue=true, prompt="If the write-evidence-report skill is not installed, read skills/write-evidence-report/SKILL.md in bcmyguest/personal-skills."]
+  report_review  [agent="reviewer", count="$pairs", skill="independent-review", prompt="If the independent-review skill is not installed, read skills/independent-review/SKILL.md in bcmyguest/personal-skills."]
+
+  orchestrator -> plan           [on=dispatch, kind=broadcast]
+  plan -> plan_review            [on=submit, kind=pair]
+  plan_review -> plan            [on=fail, kind=pair]
+  plan_review -> spend_approval  [on=pass]
+  spend_approval -> run          [on=pass]
+  run -> run_review              [on=submit, kind=pair]
+  run_review -> run              [on=fail, kind=pair]
+  run_review -> report           [on=pass, kind=pair]
+  report -> report_review        [on=submit, kind=pair]
+  report_review -> report        [on=fail, kind=pair]
+  report_review -> orchestrator  [on=pass, kind=fan-in]
+  plan -> orchestrator           [on=blocked, kind=fan-in]
+  run -> orchestrator            [on=blocked, kind=fan-in]
+  report -> orchestrator         [on=blocked, kind=fan-in]
+}

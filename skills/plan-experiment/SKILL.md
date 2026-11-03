@@ -31,5 +31,6 @@ Plan only; no paid runs. The plan goes to the user for approval of the spend.
 
 ## Next
 
+- `independent-review` (transition): the pre-registered plan, for a fresh-context read before spend.
 - `spend-approval` (transition): the pre-registered plan.
 - `run-experiment` (prerequisite): the approved plan.

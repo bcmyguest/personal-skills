@@ -16,7 +16,7 @@ The author never reviews its own artifact. A separate reviewer reads it cold and
 
 ## Running it
 
-- With `wteam`: copy the [`wteam/`](wteam) folder beside this file into the wteam config dir once (`cp -r wteam/. "${WTEAM_CONFIG_DIR:-$HOME/.config/wteam}/"`), then `wteam phase artifact-review --input <artifact>` runs three fresh-context reviewers (claims, critic, scope) and records the verdict.
+- With `wteam`: run `scripts/install-wteam.sh` from bcmyguest/personal-skills once, then `wteam phase artifact-review --input <artifact>` runs three fresh-context reviewers (claims, critic, scope) and records the verdict.
 - Elsewhere: start a separate agent with the artifact, the claim it makes, the acceptance criteria, and the verdict format below. Do not pass the author's conversation.
 
 ## Verdict format

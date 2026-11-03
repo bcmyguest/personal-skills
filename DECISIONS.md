@@ -1,7 +1,7 @@
 # Decisions: method skills and skill chains
 
-Why the method skills (`diagnose-failure` … `write-evidence-report`) and the chain
-registry look the way they do. Settled with the owner in question rounds, November 2026.
+Why the method skills (`diagnose-failure` … `write-evidence-report`) and the skill
+chains look the way they do. Settled with the owner in question rounds, November 2026.
 
 ## Evidence
 
@@ -10,8 +10,7 @@ Codex, Cursor), their instruction files, plan documents, and existing skills, sa
 across about ten projects. Delegated prompts written by agents, host-injected text, and
 benchmark sandboxes were excluded. Session references and project details stay in a
 private evidence directory outside this repo. Each rule in a skill was seen in that
-evidence or stated in the owner's instructions; relationships in the registry are marked
-`observed` or `inferred` accordingly.
+evidence or stated in the owner's instructions.
 
 Not covered: the agents' side of the transcripts in depth, PR review threads, and work on
 other machines or in ticket systems. Treat the method skills as a first cut on that basis.
@@ -27,9 +26,12 @@ other machines or in ticket systems. Treat the method skills as a first cut on t
 | When to ask the user | Only before steps that are costly to reverse, paid, destructive, or scope-changing |
 | Style and personal preferences | Live in bcmyguest/claude-memory, with `writing-with-clarity`; not in method skills |
 | Slice orchestration | No skill: bcmyguest/wteam does it and appears as an external node |
-| Independent review | Thin host-neutral skill; its wteam phase (`artifact-review`) ships as phase and role files in `skills/independent-review/wteam/`, not as wteam code |
+| Independent review | Thin host-neutral skill; its wteam phase (`artifact-review`) ships as phase and role files in `wteam/phases/` and `wteam/roles/`, not as wteam code |
 | Agent-pipeline tuning | Folded into wteam's `refine` skill, generalised beyond wteam runs |
-| Registry format | DOT in wteam's subset, so wteam parses it; four workflows generate runnable teams |
+| Chain source | The chains are wteam teams: hand-written `wteam/teams/<name>/team.dot`, imported by `scripts/install-wteam.sh` (copy, overwriting). The `chains/skills.dot` registry is gone, with its observed/inferred tags; hand-offs outside teams come from each skill's `## Next` |
+| Which chains are teams | fix-defect, port, ui, report-review, experiment, decide-and-build. `brief-agent` (handoff) has one step, so no team |
+| Multi-step teams | One worker node per step (wteam steps); the ticket commits once after the last step. A worker step may set `continue=true` to keep the previous step's session while it fits; reviewers always run as separate agents |
+| Decisions inside a team | The `decide` step asks its round by `wteam block`; answers return as a `wteam requeue --note`, which resumes the same step |
 | Team node prompts | wteam appends a node's `prompt=` to the agent's role prompt, keeping the verdict protocol |
 
 ## Tests

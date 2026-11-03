@@ -31,6 +31,7 @@ Plan only. Implementation waits for the decisions it depends on, and nothing els
 
 ## Next
 
+- `independent-review` (suggested): the decision record, for a fresh-context read.
 - `to-spec` (suggested): the decision record, when the work needs a written spec.
 
 Downstream of that, `to-spec` hands a spec to `to-tickets`, whose tickets run in `wteam` or, for one-off work, `implement`.
