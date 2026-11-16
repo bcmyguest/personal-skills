@@ -41,6 +41,7 @@ from bcmyguest/personal-skills."
 | `uv-develop` | Corrective uv operations — targeted upgrades, `--locked` vs `--frozen`, venv repair |
 | `pre-commit-setup` | Stand up pre-commit from shipped fragments — hygiene + Conventional Commits + hook-update policy |
 | `release-setup` | Release automation from Conventional Commits — canonical git-cliff config + GitLab tag/release pipeline |
+| `use-template` | Start a repo from your GitHub template repos (Rust CLI, npm, Python, docs site, skills pack) |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `rigs` | Install OpenRig, hand a goal to its operator, and follow a coding-agent team's work (vendored from OpenRig 0.6.7) |
@@ -185,6 +186,7 @@ skills/                          # portable agent skills — one folder per skil
   uv-develop/                SKILL.md
   pre-commit-setup/          SKILL.md + templates/
   release-setup/             SKILL.md + templates/
+  use-template/              SKILL.md
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
   react-ts-setup/            SKILL.md + references/
