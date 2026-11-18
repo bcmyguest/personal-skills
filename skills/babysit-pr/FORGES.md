@@ -6,7 +6,7 @@ Read only your forge's section. Flags drift between CLI versions; confirm with `
 
 "Could not resolve to a Repository" on a repo that exists means the active `gh` account lacks access. Check `gh auth status`; run with another logged-in account for one shell via `export GH_TOKEN=$(gh auth token --user <login>)`.
 
-- PR for the current branch: `gh pr view --json number,url,baseRefName,headRefName,mergeable,reviewDecision`
+- The PR: `gh pr view [<number> | <url>] --json number,url,state,baseRefName,headRefName,mergeable,reviewDecision`; no argument means the current branch. Check out its head: `gh pr checkout <number>`
 - Top-level comments and review summaries: `gh pr view --json comments,reviews`
 - Inline threads with resolved state (`gh pr view` omits it; use GraphQL):
 
@@ -29,7 +29,7 @@ Read only your forge's section. Flags drift between CLI versions; confirm with `
 
 `glab api` expands `:id` to the current project.
 
-- MR for the current branch: `glab mr view --output json` (fields `iid`, `target_branch`, `source_branch`, `has_conflicts`)
+- The MR: `glab mr view [<iid> | <branch>] --output json` (fields `iid`, `state`, `target_branch`, `source_branch`, `has_conflicts`); no argument means the current branch. From a link, the `iid` is the number after `/-/merge_requests/`. Check out its head: `glab mr checkout <iid>`
 - All discussions: `glab api "projects/:id/merge_requests/<iid>/discussions?per_page=100"`. An open thread has a note with `resolvable: true` and `resolved: false`; notes with `resolvable: false` and `system: false` are top-level comments.
 - Reply in a thread: `glab api -X POST "projects/:id/merge_requests/<iid>/discussions/<discussion-id>/notes" -f body='...'`
 - Resolve a thread: `glab api -X PUT "projects/:id/merge_requests/<iid>/discussions/<discussion-id>?resolved=true"`
@@ -43,7 +43,7 @@ Read only your forge's section. Flags drift between CLI versions; confirm with `
 
 Needs the extension: `az extension add --name azure-devops`. Organization and project come from `az devops configure --defaults` or `--org` / `--project`.
 
-- PR for the current branch: `az repos pr list --source-branch <branch> --status active`
+- The PR: `az repos pr show --id <id>`, or for the current branch `az repos pr list --source-branch <branch> --status active`. From a link, the id is the number after `/pullrequest/`. Check out its head: `az repos pr checkout --id <id>`
 - Threads (no first-class command):
 
   ```bash

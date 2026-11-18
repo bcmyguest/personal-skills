@@ -1,5 +1,6 @@
 ---
 name: babysit-pr
+argument-hint: "[pr-link | pr-number]"
 description: >-
   Keep an open PR or MR on GitHub, GitLab, or Azure DevOps merge-ready until it
   merges: fix mechanical review comments in batches, round up design-level
@@ -11,9 +12,17 @@ description: >-
 
 Your job is to get this PR **merge-ready** and keep it there: mergeable with its base, every job green, every review thread triaged. Run a **pass** (steps 3 to 8), wait for the PR to change, and run another, until the PR is merged or closed. "Pushed a fix, CI is running" is not an end state: watch the run to completion. Merging is the user's call.
 
-## 1. Find the forge and the PR
+## 1. Find the PR and the forge
 
-Pick the CLI from the `origin` remote host:
+The argument names the PR:
+
+- **A link**: the host picks the forge, the path gives the repository and the number. Work in a local checkout of that repository; when the current directory is another repository, find the checkout or ask where it is.
+- **A number**: that PR or MR in the current repository.
+- **Nothing**: the open PR whose head is the current branch. With no open PR for the branch, say so and stop.
+
+Check out the PR's head branch before the first pass; with uncommitted work in the tree, use a separate worktree.
+
+Pick the CLI from the link's host, else the `origin` remote host:
 
 | Host | CLI |
 | --- | --- |
@@ -23,7 +32,7 @@ Pick the CLI from the `origin` remote host:
 
 For a self-hosted host, decide from repo files (`.github/`, `.gitlab-ci.yml`, `azure-pipelines.yml`) and the hosts each CLI is logged in to. If the CLI is missing or logged out, stop and tell the user.
 
-The PR is the one the user named, else the open PR for the current branch. Read [`FORGES.md`](FORGES.md), the section for your forge only, for the commands that list threads, post replies, resolve threads, read and rerun jobs, and find stack neighbours.
+Read [`FORGES.md`](FORGES.md), the section for your forge only, for the commands that list threads, post replies, resolve threads, read and rerun jobs, and find stack neighbours.
 
 ## 2. Map the stack
 
