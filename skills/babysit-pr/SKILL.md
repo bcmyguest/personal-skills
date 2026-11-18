@@ -61,15 +61,17 @@ Done when every open thread and every failed job has a bucket.
 1. Check out the PR branch. Fix all batch items, one commit per related group, as new commits on top; reviewers re-read a diff, so keep history they have seen.
 2. Run the project's tests, lint, and type check.
 3. Push. A plain push suffices on this branch when you only added commits.
-4. Reply on each addressed thread, then resolve it. The reply is one line on what changed plus the commit SHA, signed with the agent you are, then the escalation line:
+4. Reply on each addressed thread, then resolve it. The reply is one line on what changed plus the commit SHA, a blank line, then a footer in small type that names the agent you are and how to escalate:
 
-   ```text
-   Renamed to fetch_page in abc1234. (Claude)
-   Disagree? Thumbs-down this reply or answer "human" to escalate.
+   ```markdown
+   Renamed to fetch_page in abc1234.
+
+   <sub>Claude · Disagree? Thumbs-down this reply or answer `human` to escalate.</sub>
    ```
 
-   For a tiny fix, `Addressed. (Claude)` plus the escalation line is enough. Sign as Claude, Codex, or whichever agent is running.
-5. For a "no change" thread, reply with the reason, signed and ending with the escalation line the same way, and leave it open for the reviewer.
+   For a tiny fix, `Addressed.` plus the footer is enough. Name Claude, Codex, or whichever agent is running. On a forge that renders no HTML in comments, write the footer as a plain last line.
+5. For a "no change" thread, reply with the reason and the same footer, and leave it open for the reviewer.
+6. Name no person as the owner of a decision in a reply. A choice that is still open is "the engineers' decision", and one already made is "the engineers decided"; reviewers read the reply as the team's position.
 
 A comment on code that belongs to a lower PR in the stack is fixed on that PR's branch, then restacked upward.
 
