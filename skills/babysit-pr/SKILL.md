@@ -1,14 +1,14 @@
 ---
 name: babysit-pr
 description: >-
-  Babysit an open PR or MR on GitHub, GitLab, or Azure DevOps: fix mechanical
+  Babysit an open PR or MR on GitHub, GitLab, or Azure DevOps until it merges: fix mechanical
   review comments in batches, round up design-level ones as questions, fix
   failing CI jobs, and restack dependent PRs. Use when the user asks to babysit, shepherd,
   or address review comments on a PR or MR.
 ---
 # Babysit a PR
 
-One invocation is one **pass**: triage every open review thread and every CI job, fix the mechanical ones, ask about the rest, leave the PR pushed and green. To keep watching, the user pairs this with `/loop`.
+Babysitting is a **watch**: run a **pass** (steps 3 to 8), then wait for the PR to change and run another, until the PR is merged or closed. A pass triages every open review thread and every CI job, fixes the mechanical ones, asks about the rest, and leaves the PR pushed and green.
 
 ## 1. Find the forge and the PR
 
@@ -82,3 +82,19 @@ Ask all roundup items in one message, numbered. Each names the thread (reviewer,
 ## 8. Report
 
 One table: every thread and job, its bucket, and its outcome (commit SHA and thread resolved, job passed, question pending, or reason for no change). The pass is done when every row has an outcome and each stack branch on the remote matches local.
+
+## 9. Keep watching
+
+After the report, wait for a change and start the next pass at step 3. A change is any of:
+
+- a new review thread, comment, or review summary, or a reply on a thread you answered;
+- a job finishing or failing on any stack branch;
+- a new commit on the PR's base, or a conflict with it;
+- a commit on a stack branch that you did not push: fetch it and rebuild the backup refs before touching anything.
+
+Wait with the harness's own mechanism for a background poll that wakes you when its condition is met (in Claude Code, a monitored until-loop over the forge CLI), every 2 minutes while jobs run and every 10 minutes otherwise. Each later report lists only what changed since the last one.
+
+A pending roundup pauses only its own threads; keep watching and fixing the rest, and repeat the open questions in each report.
+
+The watch ends when the PR is merged or closed, or the user stops it. On merge of a PR with children, retarget the first child to the default branch, restack as in step 5, and offer to keep watching the child.
+
