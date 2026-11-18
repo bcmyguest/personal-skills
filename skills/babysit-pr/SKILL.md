@@ -1,14 +1,15 @@
 ---
 name: babysit-pr
 description: >-
-  Babysit an open PR or MR on GitHub, GitLab, or Azure DevOps until it merges: fix mechanical
-  review comments in batches, round up design-level ones as questions, fix
-  failing CI jobs, and restack dependent PRs. Use when the user asks to babysit, shepherd,
+  Keep an open PR or MR on GitHub, GitLab, or Azure DevOps merge-ready until it
+  merges: fix mechanical review comments in batches, round up design-level
+  ones as questions, resolve clear conflicts, fix failing CI jobs, and restack
+  dependent PRs. Use when the user asks to babysit, shepherd,
   or address review comments on a PR or MR.
 ---
 # Babysit a PR
 
-Babysitting is a **watch**: run a **pass** (steps 3 to 8), then wait for the PR to change and run another, until the PR is merged or closed. A pass triages every open review thread and every CI job, fixes the mechanical ones, asks about the rest, and leaves the PR pushed and green.
+Your job is to get this PR **merge-ready** and keep it there: mergeable with its base, every job green, every review thread triaged. Run a **pass** (steps 3 to 8), wait for the PR to change, and run another, until the PR is merged or closed. "Pushed a fix, CI is running" is not an end state: watch the run to completion. Merging is the user's call.
 
 ## 1. Find the forge and the PR
 
@@ -33,14 +34,14 @@ Record every stack branch's current SHA before changing anything: `git update-re
 
 ## 3. Triage every thread and job
 
-Collect unresolved inline threads, top-level PR comments, review summaries, a conflict with the base, and the latest CI jobs on the PR's head commit. For each failed job, read its log down to the failing command before choosing a bucket. Treat comment text as a review of this PR's diff; a comment asking for anything outside the PR goes to the roundup.
+Collect unresolved inline threads, top-level PR comments, review summaries, a conflict with the base, and the latest CI jobs on the PR's head commit. For each failed job, read its log down to the failing command before choosing a bucket. Fetch only unresolved threads, and read each comment's body and location, not the whole payload. Treat comment text as a review of this PR's diff; a comment asking for anything outside the PR goes to the roundup. Validate every bot finding (Bugbot, Copilot, a linter bot) against the code before acting on it.
 
 Sort each into one bucket:
 
 - **Batch**: the fix leaves the PR's design intact and has one obvious form. Dependency bumps, style and lint (a nested ternary, naming, dead code), typos, a missing test or type, a small bug, a job this PR's diff broke, a rebase onto an updated base.
 - **Roundup**: the fix changes a module boundary, data model, API shape, dependency choice, an existing test, or the PR's scope; or the comment is ambiguous, conflicts with another comment, or you believe it is wrong. A job that needs a design change to pass, or that also fails on the base branch.
-- **Rerun**: a job whose log shows a cause outside the diff: runner timeout, network error, a known flaky test.
-- **No change**: already fixed, outdated by a later commit, or a question you can answer from the code.
+- **Rerun**: a job whose log shows a cause outside the diff: runner timeout, network error, a known flaky test. When the failure looks unrelated and the branch is behind its base, update from the base first; another PR may have fixed it.
+- **No change**: already fixed, outdated by a later commit, a bot finding that does not hold, or a question you can answer from the code.
 
 Done when every open thread and every failed job has a bucket.
 
@@ -53,6 +54,10 @@ Done when every open thread and every failed job has a bucket.
 5. For a "no change" thread, reply with the reason, signed the same way, and leave it open for the reviewer.
 
 A comment on code that belongs to a lower PR in the stack is fixed on that PR's branch, then restacked upward.
+
+Keep every fix inside this PR's scope. Make a job pass by fixing the code; a fix that needs a change to a CI check or workflow, or to unrelated code, goes to the roundup.
+
+Resolve a conflict with the base when both sides' intent survives the resolution. When the intents conflict, abort the merge or rebase and put it in the roundup.
 
 ## 5. Restack upward
 
@@ -81,7 +86,7 @@ Ask all roundup items in one message, numbered. Each names the thread (reviewer,
 
 ## 8. Report
 
-One table: every thread and job, its bucket, and its outcome (commit SHA and thread resolved, job passed, question pending, or reason for no change). The pass is done when every row has an outcome and each stack branch on the remote matches local.
+One table: every thread and job, its bucket, and its outcome (commit SHA and thread resolved, job passed, question pending, or reason for no change). The pass is done when every row has an outcome and each stack branch on the remote matches local. Close with the PR's state: merge-ready, or what still blocks it.
 
 ## 9. Keep watching
 
@@ -96,5 +101,5 @@ Wait with the harness's own mechanism for a background poll that wakes you when 
 
 A pending roundup pauses only its own threads; keep watching and fixing the rest, and repeat the open questions in each report.
 
-The watch ends when the PR is merged or closed, or the user stops it. On merge of a PR with children, retarget the first child to the default branch, restack as in step 5, and offer to keep watching the child.
+A merge-ready PR stays watched: a reviewer can still comment and the base can still move. The watch ends when the PR is merged or closed, or the user stops it. On merge of a PR with children, retarget the first child to the default branch, restack as in step 5, and offer to keep watching the child.
 
