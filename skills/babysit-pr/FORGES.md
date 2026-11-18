@@ -15,11 +15,15 @@ Read only your forge's section. Flags drift between CLI versions; confirm with `
   query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){
     pullRequest(number:$pr){reviewThreads(first:100){nodes{
       id isResolved isOutdated path line
-      comments(first:50){nodes{databaseId author{login} body url}}}}}}}'
+      comments(first:50){nodes{databaseId author{login} body url
+        reactions(content:THUMBS_DOWN){totalCount}}}}}}}}'
   ```
+
+  `reactions` counts thumbs-downs per comment; REST alternative: `gh api repos/<owner>/<repo>/pulls/comments/<databaseId>/reactions`.
 
 - Reply in a thread: `gh api repos/<owner>/<repo>/pulls/<number>/comments/<databaseId of the thread's first comment>/replies -f body='...'`
 - Resolve a thread: `gh api graphql -F id=<thread id> -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}'`
+- Reopen a thread: the same call with `unresolveReviewThread`
 - Reply to a top-level comment: `gh pr comment <number> --body '...'`
 - Jobs: `gh pr checks <number>` (`--watch` blocks until they finish); failing logs: `gh run view <run-id> --log-failed`; rerun: `gh run rerun <run-id> --failed`
 - Children: `gh pr list --base <head-branch> --json number,headRefName`
@@ -33,6 +37,8 @@ Read only your forge's section. Flags drift between CLI versions; confirm with `
 - All discussions: `glab api "projects/:id/merge_requests/<iid>/discussions?per_page=100"`. An open thread has a note with `resolvable: true` and `resolved: false`; notes with `resolvable: false` and `system: false` are top-level comments.
 - Reply in a thread: `glab api -X POST "projects/:id/merge_requests/<iid>/discussions/<discussion-id>/notes" -f body='...'`
 - Resolve a thread: `glab api -X PUT "projects/:id/merge_requests/<iid>/discussions/<discussion-id>?resolved=true"`
+- Reopen a thread: the same call with `?resolved=false`
+- Reactions on a note: `glab api "projects/:id/merge_requests/<iid>/notes/<note-id>/award_emoji"`; a thumbs-down has `name: "thumbsdown"`
 - Top-level comment: `glab mr note <iid> --message '...'`
 - Jobs: `glab ci status`; failing job log: `glab ci trace <job-id>`; rerun: `glab ci retry <job-id>`
 - Children: `glab mr list --target-branch <source-branch>`
@@ -62,6 +68,8 @@ Needs the extension: `az extension add --name azure-devops`. Organization and pr
   ```
 
 - Resolve a thread: the same `pullRequestThreads` call with `--http-method PATCH`, `threadId=<thread-id>` added to the route parameters, and `--in-file` holding `{"status": "fixed"}`.
+- Reopen a thread: the same PATCH with `{"status": "active"}`.
+- Reactions: comments carry likes only, with no thumbs-down, so only a `human` reply escalates.
 - Jobs: `az repos pr policy list --id <id>`; build detail: `az pipelines runs show --id <build-id>`; rerun: `az repos pr policy queue --id <id> --evaluation-id <evaluation-id>`
 - Children: `az repos pr list --target-branch <source-branch> --status active`
 - Parent: `az repos pr list --source-branch <target-branch> --status active`
