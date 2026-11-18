@@ -44,6 +44,7 @@ from bcmyguest/personal-skills."
 | `use-template` | Start a repo from your GitHub template repos (Rust CLI, npm, Python, docs site, skills pack) |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
+| `babysit-pr` | Work an open PR/MR on GitHub, GitLab, or Azure DevOps — batch small review fixes, round up design questions, fix failing jobs, restack |
 | `rigs` | Install OpenRig, hand a goal to its operator, and follow a coding-agent team's work (vendored from OpenRig 0.6.7) |
 | `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `rust-setup` | Scaffold a Rust repo from shipped templates — CI, auto-releases, crates.io Trusted Publishing |
@@ -140,7 +141,7 @@ flowchart LR
 
 Solid arrows are transitions a skill states, dashed arrows are suggestions, and circle-ended arrows are alternatives. [CHAINS.md](CHAINS.md) draws each team and lists every hand-off.
 
-Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `uv-develop`, `uv-setup`.
+Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `babysit-pr`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `use-template`, `uv-develop`, `uv-setup`.
 <!-- chains:end -->
 
 The portable `handoff` and `pickup` skills moved to their own repo —
@@ -189,6 +190,7 @@ skills/                          # portable agent skills — one folder per skil
   use-template/              SKILL.md
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
+  babysit-pr/                SKILL.md + FORGES.md
   react-ts-setup/            SKILL.md + references/
   rust-setup/                SKILL.md + templates/
   senior-frontend-refactor/  SKILL.md

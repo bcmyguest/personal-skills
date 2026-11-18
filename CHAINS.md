@@ -159,6 +159,7 @@ flowchart LR
 
 - `add-ansible-role`
 - `assign-mr-reviewers`
+- `babysit-pr`
 - `debug-lemonade`
 - `efficiency-audit`
 - `pre-commit-setup`
@@ -168,5 +169,6 @@ flowchart LR
 - `rust-setup`
 - `security-audit`
 - `senior-frontend-refactor`
+- `use-template`
 - `uv-develop`
 - `uv-setup`
