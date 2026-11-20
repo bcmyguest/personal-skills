@@ -25,12 +25,12 @@ Gathered November 2026. Each rule in `SKILL.md` traces to a finding here.
 | Claude Desktop, Claude Code tab | No; claude.ai web does | [claude-code#52517](https://github.com/anthropics/claude-code/issues/52517) |
 | Plain terminal, email, Slack | No | agentpatterns.ai |
 
-Terminal fallbacks exist as renderers: `mermaid-ascii` (Go), `beautiful-mermaid`, and the Rust renderer in Grok CLI ([Simon Willison, July 2026](https://simonwillison.net/2026/Jul/16/grok-mermaid/)). Basis for the terminal row of step 3.
+Terminal fallbacks exist as renderers: `mermaid-ascii` (Go), `beautiful-mermaid`, and the Rust renderer in Grok CLI ([Simon Willison, July 2026](https://simonwillison.net/2026/Jul/16/grok-mermaid/)). These draw an approximation of the layout. A page that runs Mermaid itself draws exactly what GitHub and VS Code draw, opens on any machine with a browser, and needs nothing on `PATH` but Node, so step 3 writes a file for every surface that cannot draw Mermaid.
 
 ## Size and correctness
 
 - Mermaid Chart: flowchart layout degrades past about 100 connections ([blog](https://docs.mermaidchart.com/blog/posts/flow-charts-are-on2-complex-so-dont-go-over-100-connections)); Mermaid-Sonar flags 50 nodes as complex. The 20-node cap follows the agentpatterns example prompt and keeps a diagram within one screen.
-- [MermaidSeqBench](https://arxiv.org/abs/2511.14967) (IBM Research, NeurIPS 2025 workshop): state-of-the-art models show significant gaps in producing correct Mermaid sequence diagrams. LLM-written Mermaid also fails silently on syntax, for example backticks in labels ([pr-agent#2211](https://github.com/The-PR-Agent/pr-agent/issues/2211)). Basis for the label and validation rules.
+- [MermaidSeqBench](https://arxiv.org/abs/2511.14967) (IBM Research, NeurIPS 2025 workshop): state-of-the-art models show significant gaps in producing correct Mermaid sequence diagrams. LLM-written Mermaid also fails silently on syntax, for example backticks in labels ([pr-agent#2211](https://github.com/The-PR-Agent/pr-agent/issues/2211)). Basis for the label rule and for `scripts/diagram.mjs check`, which runs Mermaid's own parser (`mermaid.parse`, headless under jsdom) so errors surface before the user sees a blank block.
 
 ## Existing tools, and the gap this skill fills
 

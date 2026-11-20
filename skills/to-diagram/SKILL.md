@@ -10,7 +10,7 @@ Draw the subject as one picture the user can read faster than the prose. The rea
 
 ## Arguments
 
-`$ARGUMENTS` holds up to two parts, both optional:
+The text after the command (`$ARGUMENTS` in hosts that substitute it) holds up to two parts, both optional:
 
 - **Item numbers,** comma-separated. They refer to the numbered items in your last response; with no numbering, count its top-level bullets or paragraphs from 1.
 - **Subject,** any text after the numbers ("the auth flow", "how the queue retries").
@@ -47,9 +47,10 @@ When two questions apply, draw two small diagrams rather than one mixed one.
 | Surface | Format |
 | --- | --- |
 | Host has an inline visual tool (for example a widget or artifact tool) | Use that tool. |
-| Renders Mermaid inline: GitHub, GitLab, claude.ai, VS Code 1.121+ chat and preview, Cursor IDE chat, Zed, Obsidian, Notion | A fenced `mermaid` block. |
-| Raw terminal: Claude Code CLI, Codex CLI, plain SSH | Unicode box-drawing art in a `text` block. If `mermaid-ascii` is on `PATH`, write the Mermaid and render it through that. Put the Mermaid source after the art only when it is going into a file. |
-| Unknown | A `mermaid` block, plus one line saying where it renders. |
+| Renders Mermaid inline: GitHub, GitLab, Azure DevOps, claude.ai, VS Code 1.121+ chat and preview, Cursor IDE chat, Zed, Obsidian | A fenced `mermaid` block. |
+| Anything else: terminal agents (Claude Code CLI, Codex CLI, opencode), desktop app tabs that show raw source, unknown hosts | A file. Write the Mermaid to `${TMPDIR:-/tmp}/diagrams/<slug>.mmd`, run `node <this skill's folder>/scripts/diagram.mjs html <that file>`, and give the user the printed path to open in a browser. |
+
+The HTML page is self-contained (Mermaid is inlined), so it opens offline. When the agent runs on a different machine from the user, send the file with the host's file-sharing tool instead of a path. Charts go through the same route: Mermaid's `xychart-beta` draws line and bar charts, and `pie` draws part-to-whole.
 
 ## 4. Draw
 
@@ -58,7 +59,7 @@ When two questions apply, draw two small diagrams rather than one mixed one.
 3. Label edges with the verb or message ("validates", "POST /token"), not with "uses".
 4. Labels hold no backticks; quote labels that contain punctuation (`A["parse(x)"]`).
 5. Add a legend only when shape or colour carries meaning.
-6. Validate the Mermaid before sending: run `mmdc` or `npx -y @mermaid-js/mermaid-cli` on it when either is available. A block that fails to parse renders as nothing on most surfaces.
+6. Check every diagram before sending: `node <this skill's folder>/scripts/diagram.mjs check FILE` runs Mermaid's own parser on a `.mmd` file or on each `mermaid` fence in a `.md` file, and fails on a syntax error or more than 20 nodes. Fix and rerun until it prints OK. A block that fails to parse renders as nothing on most surfaces. The first run installs `mermaid` and `jsdom` into `~/.cache/to-diagram`.
 
 ## 5. Explain
 

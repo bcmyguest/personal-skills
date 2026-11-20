@@ -10,7 +10,7 @@ The user did not follow your last response. Explain it again so they can act on 
 
 ## Arguments
 
-`$ARGUMENTS` holds up to two parts, both optional:
+The text after the command (`$ARGUMENTS` in hosts that substitute it) holds up to two parts, both optional:
 
 - **Item numbers,** comma-separated (`2,4`). They refer to the numbered items in your last response. When it had no numbered items, count its top-level bullets or paragraphs from 1, and state the mapping in one line ("2 = the cache bullet"). Report numbers that match nothing.
 - **Focus,** any text after the numbers ("why the cache matters", "show the code", "diagram"). It names what is unclear or which form to use.
