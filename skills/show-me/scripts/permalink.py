@@ -34,6 +34,19 @@ def git(cwd, *args):
     return r.returncode, r.stdout.strip()
 
 
+def on_remote(top, remote, sha):
+    """True when a remote branch contains SHA: local tracking refs first, then ls-remote."""
+    if git(top, "for-each-ref", "--contains", sha, f"refs/remotes/{remote}")[1]:
+        return True
+    rc, out = git(top, "ls-remote", "--heads", remote)
+    if rc != 0:
+        return False
+    for head in (line.split()[0] for line in out.splitlines() if line.strip()):
+        if head == sha or git(top, "merge-base", "--is-ancestor", sha, head)[0] == 0:
+            return True
+    return False
+
+
 def parse_remote(url):
     """Return (forge, base_url, extra) from a git remote URL, forge None when unknown."""
     url = url.strip()
@@ -116,7 +129,7 @@ def reference(spec, remote="origin", forge=None, cwd=None):
             reason = "file is not committed"
         elif git(top, "diff", "--quiet", "HEAD", "--", rel)[0] != 0:
             reason = "file has uncommitted changes, so the lines may differ from the commit"
-        elif not git(top, "for-each-ref", "--contains", sha, "refs/remotes")[1]:
+        elif not on_remote(top, remote, sha):
             reason = f"commit {sha[:12]} is not on any remote branch; push it first"
         elif not forge:
             reason = f"unknown forge for {url}; pass --forge {'|'.join(FORGES)}"

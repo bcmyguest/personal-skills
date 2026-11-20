@@ -87,6 +87,22 @@ class Reference(unittest.TestCase):
         sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True).stdout.strip()
         self.assertIn(f"/blob/{sha}/a.py#L1-L2)", self.ref("a.py:1-2", forge="github"))
 
+    def test_pushed_commit_without_tracking_ref_gets_link(self):
+        # Single-branch and shallow clones have no tracking ref for a pushed feature branch.
+        sh(self.repo, "git", "push", "-q", "origin", "HEAD:feature")
+        sh(self.repo, "git", "update-ref", "-d", "refs/remotes/origin/feature")
+        self.assertIn("/blob/", self.ref("a.py:1", forge="github"))
+
+    def test_older_pushed_commit_gets_link(self):
+        self.push()
+        (self.repo / "b.py").write_text("x\n")
+        sh(self.repo, "git", "add", ".")
+        sh(self.repo, "git", "commit", "-qm", "two")
+        self.push()
+        sh(self.repo, "git", "update-ref", "-d", "refs/remotes/origin/main")
+        sh(self.repo, "git", "reset", "-q", "--hard", "HEAD~1")
+        self.assertIn("/blob/", self.ref("a.py:1", forge="github"))
+
     def test_unknown_forge_asks_for_flag(self):
         self.push()
         self.assertIn("pass --forge", self.ref("a.py:1"))
