@@ -169,6 +169,9 @@ flowchart LR
 - `rust-setup`
 - `security-audit`
 - `senior-frontend-refactor`
+- `show-me`
+- `sorry-what`
+- `to-diagram`
 - `use-template`
 - `uv-develop`
 - `uv-setup`

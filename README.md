@@ -34,6 +34,9 @@ from bcmyguest/personal-skills."
 | `research-options` | Compare options with primary sources and spikes |
 | `independent-review` | Get a verdict from a reviewer that did not write the artifact |
 | `brief-agent` | Write a self-contained brief for the next agent or session |
+| `sorry-what` | Re-explain the last response, or items `2,4` of it, as context, a code snippet, a diagram, or an overview |
+| `show-me` | Point to the code or source behind the last response: snippet, permalink, or doc section |
+| `to-diagram` | Draw the subject as the diagram type that fits, in a format the current chat renders |
 | `plan-experiment` | Pre-register a comparison before spending on it |
 | `run-experiment` | Run an approved plan, monitor it, and keep it resumable |
 | `write-evidence-report` | Publish results that say exactly what the evidence supports |
@@ -141,7 +144,7 @@ flowchart LR
 
 Solid arrows are transitions a skill states, dashed arrows are suggestions, and circle-ended arrows are alternatives. [CHAINS.md](CHAINS.md) draws each team and lists every hand-off.
 
-Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `babysit-pr`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `use-template`, `uv-develop`, `uv-setup`.
+Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `babysit-pr`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `show-me`, `sorry-what`, `to-diagram`, `use-template`, `uv-develop`, `uv-setup`.
 <!-- chains:end -->
 
 The portable `handoff` and `pickup` skills moved to their own repo —
