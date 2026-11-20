@@ -22,39 +22,120 @@ from bcmyguest/personal-skills."
 
 ## Skills
 
+### Changes
+
+Audit an agent-written diff for overreach, port selected work across branches, match a UI to its design, and land exactly the intended change.
+
 | Skill | What |
 |-------|------|
-| `diagnose-failure` | Find and fix the actual cause of a failure, with fast and strict paths |
-| `sanity-check-numbers` | Decide whether a metric, score, or cost is real before trusting it |
 | `audit-agent-diff` | Check an agent-written diff for overreach before it lands |
-| `land-change` | Commit, push, PR, and merge exactly the intended change |
 | `port-changes` | Bring selected work across branches, PRs, or archives |
 | `match-ui-to-reference` | Converge a UI on a design through numbered deltas and screenshots |
-| `resolve-design-decisions` | Settle costly-to-reverse choices in dependency-ordered question rounds |
+| `land-change` | Commit, push, PR, and merge exactly the intended change |
+
+### Decisions and review
+
+Research options with primary sources, settle design choices in question rounds, get an independent verdict, and brief the next agent.
+
+| Skill | What |
+|-------|------|
 | `research-options` | Compare options with primary sources and spikes |
+| `resolve-design-decisions` | Settle costly-to-reverse choices in dependency-ordered question rounds |
 | `independent-review` | Get a verdict from a reviewer that did not write the artifact |
 | `brief-agent` | Write a self-contained brief for the next agent or session |
+
+### Explaining
+
+Follow-up commands for the last response — re-explain it, point to the code and sources behind it, or show its structure as a sketch, a diagram, or a page.
+
+| Skill | What |
+|-------|------|
 | `sorry-what` | Re-explain the last response, or items `2,4` of it, as context, a code snippet, a sketch, diagram, or page, or an overview |
 | `show-me` | Point to the code or source behind the last response: snippet plus a permalink on GitHub, GitLab, Azure DevOps, Bitbucket, or Gitea, or the doc section |
 | `sketch-it` | The view a person can read fastest: a text sketch, a checked Mermaid diagram, or one HTML page |
+
+### Experiments
+
+Pre-register a comparison, run it honestly, and publish what the evidence supports.
+
+| Skill | What |
+|-------|------|
 | `plan-experiment` | Pre-register a comparison before spending on it |
 | `run-experiment` | Run an approved plan, monitor it, and keep it resumable |
 | `write-evidence-report` | Publish results that say exactly what the evidence supports |
+
+### Python
+
+Python project tooling with uv — scaffold a repo from shipped templates (CI, Dependabot, git-cliff auto-releases, PyPI Trusted Publishing), corrective lockfile/upgrade/venv operations, and pre-commit hygiene.
+
+| Skill | What |
+|-------|------|
 | `uv-setup` | Scaffold a Python repo with uv from shipped templates — CI, auto-releases, PyPI Trusted Publishing |
 | `uv-develop` | Corrective uv operations — targeted upgrades, `--locked` vs `--frozen`, venv repair |
 | `pre-commit-setup` | Stand up pre-commit from shipped fragments — hygiene + Conventional Commits + hook-update policy |
-| `release-setup` | Release automation from Conventional Commits — canonical git-cliff config + GitLab tag/release pipeline |
+
+### Agent workflow
+
+Session helpers — starting a new repo from your GitHub template repos, tracking upstream GitHub issues, PRs, and releases you're waiting on, assigning CODEOWNERS reviewers to your GitLab MRs, and babysitting a PR through review and CI.
+
+| Skill | What |
+|-------|------|
 | `use-template` | Start a repo from your GitHub template repos (Rust CLI, npm, Python, docs site, skills pack) |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
 | `babysit-pr` | Work an open PR/MR on GitHub, GitLab, or Azure DevOps — batch small review fixes, round up design questions, fix failing jobs, restack |
-| `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
+
+### Rust
+
+Scaffold a Rust repo from shipped templates — CI, pre-commit + Conventional Commits, Dependabot, git-cliff auto-releases, and crates.io Trusted Publishing.
+
+| Skill | What |
+|-------|------|
 | `rust-setup` | Scaffold a Rust repo from shipped templates — CI, auto-releases, crates.io Trusted Publishing |
+
+### Release automation
+
+Automated releases from Conventional Commits with git-cliff — GitLab tags + releases with generated notes (the GitHub variants ship inside rust-setup and uv-setup).
+
+| Skill | What |
+|-------|------|
+| `release-setup` | Release automation from Conventional Commits — canonical git-cliff config + GitLab tag/release pipeline |
+
+### Frontend
+
+Scaffold a React + TypeScript repo with Vite, and refactor existing frontend code as a senior engineer.
+
+| Skill | What |
+|-------|------|
+| `react-ts-setup` | Scaffold a React + TypeScript repo with Vite + full toolchain |
 | `senior-frontend-refactor` | Refactor frontend code as a senior engineer |
-| `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
-| `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
+
+### Audits
+
+Ruthless top-N codebase audits — find and verify the 1-3 worst security vulnerabilities or efficiency problems via a capped multi-agent Sonnet workflow.
+
+| Skill | What |
+|-------|------|
 | `security-audit` | Find and adversarially verify a codebase's 1–3 worst security vulnerabilities (capped Sonnet multi-agent workflow) |
 | `efficiency-audit` | Find and verify a codebase's 1–3 worst efficiency problems with concrete cost analyses (capped Sonnet multi-agent workflow) |
+
+### Debugging
+
+Find and fix the cause of a failure, and check whether a number is real before trusting it.
+
+| Skill | What |
+|-------|------|
+| `diagnose-failure` | Find and fix the actual cause of a failure, with fast and strict paths |
+| `sanity-check-numbers` | Decide whether a metric, score, or cost is real before trusting it |
+
+### Ops
+
+Personal infra helpers — scaffold Ansible roles and diagnose lemonade-server.
+
+| Skill | What |
+|-------|------|
+| `add-ansible-role` | Add a tool-install role to a personal Ansible playbook |
+| `debug-lemonade` | Diagnose lemonade-server on the Strix Halo box |
 
 Layout: one folder per skill under [`skills/`](skills), each with a `SKILL.md` plus any
 resources it needs (`references/`, `templates/`, `config.json`).
