@@ -34,6 +34,9 @@ from bcmyguest/personal-skills."
 | `research-options` | Compare options with primary sources and spikes |
 | `independent-review` | Get a verdict from a reviewer that did not write the artifact |
 | `brief-agent` | Write a self-contained brief for the next agent or session |
+| `sorry-what` | Re-explain the last response, or items `2,4` of it, as context, a code snippet, a diagram, or an overview |
+| `show-me` | Point to the code or source behind the last response: snippet plus a permalink on GitHub, GitLab, Azure DevOps, Bitbucket, or Gitea, or the doc section |
+| `to-diagram` | Draw the subject as the diagram type that fits, checked by Mermaid's parser, inline where the chat renders it and as an HTML file elsewhere |
 | `plan-experiment` | Pre-register a comparison before spending on it |
 | `run-experiment` | Run an approved plan, monitor it, and keep it resumable |
 | `write-evidence-report` | Publish results that say exactly what the evidence supports |
@@ -141,7 +144,7 @@ flowchart LR
 
 Solid arrows are transitions a skill states, dashed arrows are suggestions, and circle-ended arrows are alternatives. [CHAINS.md](CHAINS.md) draws each team and lists every hand-off.
 
-Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `babysit-pr`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `use-template`, `uv-develop`, `uv-setup`.
+Skills with no chain: `add-ansible-role`, `assign-mr-reviewers`, `babysit-pr`, `debug-lemonade`, `efficiency-audit`, `pre-commit-setup`, `react-ts-setup`, `release-setup`, `rigs`, `rust-setup`, `security-audit`, `senior-frontend-refactor`, `show-me`, `sorry-what`, `to-diagram`, `use-template`, `uv-develop`, `uv-setup`.
 <!-- chains:end -->
 
 The portable `handoff` and `pickup` skills moved to their own repo —
@@ -197,6 +200,9 @@ skills/                          # portable agent skills — one folder per skil
   add-ansible-role/          SKILL.md + config.json + templates/
   debug-lemonade/            SKILL.md
   diagnose-failure/ … write-evidence-report/   SKILL.md each (method skills, see CHAINS.md)
+  sorry-what/                SKILL.md
+  show-me/                   SKILL.md + scripts/permalink.py (+ test_permalink.py)
+  to-diagram/                SKILL.md + scripts/diagram.mjs (+ test_diagram.mjs) + references/
   security-audit/            SKILL.md + scripts/ + evals/
   efficiency-audit/          SKILL.md + scripts/ + evals/
   _fixtures/                 shared eval fixture (vuln-app) for the audit skills
@@ -211,6 +217,13 @@ chains/routing.md                # routing examples and near-misses per skill
 scripts/chains.py                # checks teams against ## Next; writes CHAINS.md and the Skill chains section
 CHAINS.md                        # generated: team diagrams, hand-off graph and table
 DECISIONS.md                     # why the method skills look the way they do
+```
+
+## Tests
+
+```bash
+python3 skills/show-me/scripts/test_permalink.py           # forge parsing, link shapes, no-link reasons
+node --test skills/to-diagram/scripts/test_diagram.mjs     # Mermaid parse errors, node cap, HTML output
 ```
 
 ## License

@@ -23,6 +23,15 @@
       ]
     },
     {
+      "title": "Explaining",
+      "description": "Follow-up commands for the last response \u2014 re-explain it, point to the code and sources behind it, or draw it as the diagram that fits.",
+      "skills": [
+        "sorry-what",
+        "show-me",
+        "to-diagram"
+      ]
+    },
+    {
       "title": "Experiments",
       "description": "Pre-register a comparison, run it honestly, and publish what the evidence supports.",
       "skills": [
