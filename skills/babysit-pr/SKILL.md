@@ -3,14 +3,14 @@ name: babysit-pr
 argument-hint: "[pr-link | pr-number]"
 description: >-
   Keep an open PR or MR on GitHub, GitLab, or Azure DevOps merge-ready until it
-  merges: fix mechanical review comments in batches, round up design-level
+  merges, goes idle, or hits a time cap: fix mechanical review comments in batches, round up design-level
   ones as questions, resolve clear conflicts, fix failing CI jobs, and restack
   dependent PRs. Use when the user asks to babysit, shepherd,
   or address review comments on a PR or MR.
 ---
 # Babysit a PR
 
-Your job is to get this PR **merge-ready** and keep it there: mergeable with its base, every job green, every review thread triaged. Run a **pass** (steps 3 to 8), wait for the PR to change, and run another, until the PR is merged or closed. "Pushed a fix, CI is running" is not an end state: watch the run to completion. Merging is the user's call.
+Your job is to get this PR **merge-ready** and keep it there: mergeable with its base, every job green, every review thread triaged. Run a **pass** (steps 3 to 8), wait for the PR to change, and run another, until a stop condition in step 9 holds. "Pushed a fix, CI is running" is not an end state: watch the run to completion. Merging is the user's call.
 
 ## 1. Find the PR and the forge
 
@@ -122,5 +122,16 @@ Wait with the harness's own mechanism for a background poll that wakes you when 
 
 A pending roundup pauses only its own threads; keep watching and fixing the rest, and repeat the open questions in each report.
 
-A merge-ready PR stays watched: a reviewer can still comment and the base can still move. The watch ends when the PR is merged or closed, or the user stops it. On merge of a PR with children, retarget the first child to the default branch, restack as in step 5, and offer to keep watching the child.
+A merge-ready PR stays watched: a reviewer can still comment and the base can still move. On merge of a PR with children, retarget the first child to the default branch, restack as in step 5, and offer to keep watching the child.
+
+## 10. Stop
+
+End the watch at the first of:
+
+- the PR is merged or closed;
+- the user stops it;
+- **idle**: 2 hours pass with no change from the list in step 9;
+- **cap**: 24 hours since the first pass, or 15 passes.
+
+On an idle or cap stop, post nothing on the PR. Send a final report: the PR's state, the open roundup questions, the jobs still failing, and the command to resume (`/babysit-pr <pr-link>`). Stop every background poll you started.
 
