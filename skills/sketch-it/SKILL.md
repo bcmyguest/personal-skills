@@ -44,8 +44,8 @@ Read the matching section of [references/sketches.md](references/sketches.md) be
 | --- | --- | --- |
 | Who sends what to whom, in what order? | Sequence | `sequenceDiagram` |
 | What states can it be in, and what moves it between them? | State machine | `stateDiagram-v2` |
-| Which path does control take, and where does it branch? | Flowchart | `flowchart TD` |
-| What are the parts and how do they connect? | C4-style boxes, one zoom level (context, container, or component) | `flowchart LR` with `subgraph` per boundary |
+| Which path does control take, and where does it branch? | Sequence with branches | `sequenceDiagram` with `alt`, `opt`, `loop` |
+| What are the parts and how do they connect? | Sequence of the calls between parts, one zoom level (context, container, or component) | `sequenceDiagram`, participants ordered by boundary |
 | What data exists and how does it relate? | Entity-relationship | `erDiagram` |
 | What types exist and how do they extend or hold each other? | Class | `classDiagram` |
 | What changes in the links between existing parts? | The same type, changed nodes marked | `classDef changed` |
@@ -53,6 +53,8 @@ Read the matching section of [references/sketches.md](references/sketches.md) be
 | How do numbers relate? | Chart: change over time is a line; ranking is sorted bars; part-to-whole is a stacked bar; distribution is a histogram; correlation is a scatter | `xychart-beta` or `pie` |
 
 When two questions apply, draw two small diagrams rather than one mixed one.
+
+Use `flowchart` only when the user asks for one. A sequence diagram reads faster: it shows who acts, in what order, top to bottom.
 
 ## 3. Pick the format by where it will render
 
