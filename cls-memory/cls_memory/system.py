@@ -1,0 +1,253 @@
+"""Facade wiring the five components into one organisational memory system.
+
+    embedder -> neocortex (VAE) -> novelty gate -> hippocampus (MHN)
+                     ^                                   |
+                     +--------- consolidation <----------+
+
+Use the components directly when you need control; use this class when you
+want the whole loop with one object.
+"""
+
+from __future__ import annotations
+
+import warnings
+import copy
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Sequence
+
+import torch
+from torch import Tensor
+
+from .config import MemorySystemConfig
+from .consolidation import ConsolidationEngine, ConsolidationReport
+from .embeddings import Embedder, LatentSemanticEmbedder
+from .ingestion import IngestionResult, SynapticIngestionPipeline
+from .neocortex import NoveltyGate, SlowLearningNeocortex
+from .pattern_separation import KeyEncoder
+from .records import MemoryRecord, Persistence
+from .retrieval import PatternCompleter, RecallResult
+from .store import MemoryStore, SweepReport
+from .whitening import WhitenedEmbedder, Whitener
+
+
+@dataclass
+class BootstrapReport:
+    corpus_size: int
+    final_loss: float
+    novelty_threshold: float
+
+
+class OrganizationalMemory:
+    """CLS-based memory: slow semantic schema + fast episodic store."""
+
+    def __init__(
+        self,
+        config: MemorySystemConfig | None = None,
+        *,
+        embedder: Embedder | None = None,
+    ) -> None:
+        # Deep-copied: __init__ reconciles cortex.input_dim with the embedder,
+        # and mutating a config the caller still holds silently rewrites it for
+        # every other system built from it.
+        self.config = copy.deepcopy(config) if config is not None else MemorySystemConfig()
+        # A per-instance generator, not torch.manual_seed. Global seeding made
+        # reproducibility order-dependent: merely constructing a second system
+        # perturbed an existing one's training and replay. A library should not
+        # mutate process-global RNG state.
+        self.generator = torch.Generator().manual_seed(self.config.seed)
+
+        # LatentSemanticEmbedder by default, not HashingEmbedder: measured on
+        # LoCoMo, hashing gets recall@5 0.045 against ground-truth evidence
+        # turns where LSA gets 0.174. Hashing needs no fitting, which made it
+        # the convenient default; convenience is not worth 4x retrieval.
+        self.embedder = embedder or LatentSemanticEmbedder(
+            dim=self.config.cortex.input_dim, seed=self.config.seed
+        )
+        if self.embedder.dim != self.config.cortex.input_dim:
+            # Keep the cortex honest about its actual input width.
+            self.config.cortex.input_dim = self.embedder.dim
+
+        # Opt-in, and off by default: whitening makes superposition work and
+        # costs ranking depth (hit@10 0.676 -> 0.551 on LoCoMo). See
+        # WhiteningConfig. Wrapping here rather than at the call sites is what
+        # guarantees documents and queries get the *same* transform; the
+        # whitener itself is fitted in bootstrap(), where a corpus exists.
+        self.whitener = None
+        if self.config.whitening.enabled:
+            self.whitener = Whitener(self.embedder.dim, self.config.whitening)
+            self.embedder = WhitenedEmbedder(self.embedder, self.whitener)
+
+        # nn.Linear initialisation draws from the *global* RNG. fork_rng gives
+        # deterministic weights for a given seed while restoring the caller's
+        # global stream on exit, so constructing one system cannot perturb
+        # another's results.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(self.config.seed)
+            self.cortex = SlowLearningNeocortex(self.config.cortex)
+        self.gate = NoveltyGate(self.config.novelty)
+        self.key_encoder = KeyEncoder(
+            self.config.key.mode,
+            embedding_dim=self.config.cortex.input_dim,
+            latent_dim=self.config.cortex.latent_dim,
+            expansion_dim=self.config.key.expansion_dim,
+            sparsity_k=self.config.key.sparsity_k,
+            seed=self.config.seed,
+        )
+        self.store = MemoryStore(
+            self.key_encoder.dim,
+            hopfield=self.config.hopfield,
+            decay=self.config.decay,
+        )
+        self.ingestion = SynapticIngestionPipeline(
+            self.embedder,
+            self.cortex,
+            self.store,
+            self.key_encoder,
+            gate=self.gate,
+            novelty=self.config.novelty,
+            config=self.config.ingestion,
+        )
+        self.retrieval = PatternCompleter(
+            self.embedder, self.cortex, self.store, self.key_encoder
+        )
+        self.consolidation = ConsolidationEngine(
+            self.cortex,
+            self.store,
+            gate=self.gate,
+            config=self.config.consolidation,
+            reencode_key=self._reencode_key,
+        )
+
+    def _reencode_key(self, record: MemoryRecord) -> Tensor:
+        """Recompute a record's hippocampal key from its stored embedding.
+
+        Used after consolidation trains the cortex. For SEPARATED/EMBEDDING
+        keys this is a no-op in effect (they do not depend on the cortex); for
+        LATENT keys it is what stops training from destroying the memory.
+        """
+        latent = self.cortex.latent(record.embedding)
+        record.latent = latent
+        return self.key_encoder(record.embedding, latent)
+
+    # ------------------------------------------------------------- lifecycle
+
+    def bootstrap(
+        self, corpus: Sequence[str], *, epochs: int | None = None, verbose: bool = False
+    ) -> BootstrapReport:
+        """Train the schema on historical text, then calibrate the gate.
+
+        Order matters: calibrating before training would measure surprise
+        against an untrained cortex, where everything looks equally novel.
+
+        This is also where a whitener is fitted, when `whitening.enabled` -- it
+        is a covariance estimate over the embedding space, so it needs a corpus,
+        and it must be fitted *before* the cortex trains on those embeddings.
+        The `fit` branch below does both, in that order.
+        """
+        corpus = list(corpus)
+        # A fittable embedder (LSA and friends) is fitted here, on the same
+        # corpus the schema learns from. Doing it lazily at first encode would
+        # silently fit on whatever single document arrived first.
+        fit = getattr(self.embedder, "fit", None)
+        if callable(fit) and not getattr(self.embedder, "is_fitted", True):
+            fit(corpus)
+            if self.embedder.dim != self.config.cortex.input_dim:
+                raise ValueError(
+                    f"embedder fitted to dim {self.embedder.dim} but the cortex "
+                    f"expects {self.config.cortex.input_dim}"
+                )
+            rank = getattr(self.embedder, "rank", None)
+            if rank is not None and rank < self.embedder.dim:
+                warnings.warn(
+                    f"embedder fitted on {len(corpus)} documents supports only "
+                    f"{rank} of {self.embedder.dim} components; the rest are "
+                    "structurally zero. Use a larger corpus or a smaller "
+                    "input_dim.",
+                    stacklevel=2,
+                )
+
+        x = self.embedder.encode(corpus)
+        history = self.cortex.fit(
+            x, epochs=epochs, generator=self.generator, verbose=verbose
+        )
+        # Training moved the encoder, so latent-derived keys for anything
+        # already stored are stale -- the same hazard consolidate() handles.
+        # Reachable by calling bootstrap() twice, or bootstrapping after an
+        # initial ingest.
+        if len(self.store):
+            self.store.reindex(self._reencode_key)
+        self.ingestion.calibrate(corpus)
+        return BootstrapReport(
+            corpus_size=len(corpus),
+            final_loss=history[-1] if history else float("nan"),
+            novelty_threshold=self.gate.threshold,
+        )
+
+    # ------------------------------------------------------------------ write
+
+    def ingest(
+        self,
+        text: str,
+        *,
+        persistence: Persistence = Persistence.TEMPORAL,
+        metadata: dict | None = None,
+        now: datetime | None = None,
+    ) -> IngestionResult:
+        return self.ingestion.ingest(
+            text, persistence=persistence, metadata=metadata, now=now
+        )
+
+    def remember_rule(self, text: str, **kwargs) -> IngestionResult:
+        """Ingest an evergreen business rule (no forgetting curve)."""
+        return self.ingest(text, persistence=Persistence.EVERGREEN, **kwargs)
+
+    def log_event(self, text: str, **kwargs) -> IngestionResult:
+        """Ingest a temporal episodic event (30-day half-life by default)."""
+        return self.ingest(text, persistence=Persistence.TEMPORAL, **kwargs)
+
+    # ------------------------------------------------------------------- read
+
+    def recall(self, query: str, **kwargs) -> RecallResult:
+        return self.retrieval.recall(query, **kwargs)
+
+    def gist(self, query: str, **kwargs) -> RecallResult:
+        return self.retrieval.gist(query, **kwargs)
+
+    def complete(self, partial: Tensor, mask: Tensor, **kwargs) -> RecallResult:
+        return self.retrieval.complete(partial, mask, **kwargs)
+
+    # ------------------------------------------------------------ maintenance
+
+    def sleep(
+        self,
+        new_texts: Sequence[str] | None = None,
+        *,
+        epochs: int = 5,
+        now: datetime | None = None,
+    ) -> ConsolidationReport:
+        """Run one consolidation cycle (replay + interleaved training + prune)."""
+        new_data = self.embedder.encode(list(new_texts)) if new_texts else None
+        return self.consolidation.consolidate(
+            new_data, epochs=epochs, now=now, generator=self.generator
+        )
+
+    def sweep(self, now: datetime | None = None) -> SweepReport:
+        """Apply the forgetting curve without touching the cortex."""
+        return self.store.sweep(now)
+
+    # ------------------------------------------------------------------- info
+
+    def stats(self, now: datetime | None = None) -> dict:
+        s = self.store.stats(now)
+        s["novelty_threshold"] = self.gate.threshold
+        s["gate_observations"] = self.gate.observed
+        s["beta"] = self.config.hopfield.beta
+        return s
+
+    @property
+    def records(self) -> list[MemoryRecord]:
+        return self.store.records
+
+    def __len__(self) -> int:
+        return len(self.store)

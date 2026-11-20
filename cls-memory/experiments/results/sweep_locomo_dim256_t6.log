@@ -1,0 +1,32 @@
+locomo: 3 conversations, 1451 turns, LSA-256, 6 threads
+grid: 2 separation arms x 2 betas = 4 cells
+!! single-corpus run; the both-corpora overfitting guard is NOT in force for these numbers on their own
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+
+  baseline   (n=494 questions, aniso_emb +0.080, aniso_key +0.080)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.221  0.447  0.555         --        --       --       --          --           --       --
+         8   0.004  0.014  0.034      0.006     0.000    0.014    1.000       0.001       -0.217   0.0000
+       128   0.217  0.289  0.340      0.422     0.941    0.343    0.000       0.999       -0.004   0.5000
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           8   0.004  0.014  0.034            0.000
+         128   0.217  0.289  0.340            0.012
+    (18s)
+
+  DG (neg control)   (n=494 questions, aniso_emb +0.080, aniso_key +0.152)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.225  0.423  0.518         --        --       --       --          --           --       --
+         8   0.002  0.010  0.026      0.005     0.002    0.016    1.000       0.004       -0.223   0.0000
+       128   0.221  0.279  0.354      0.392     0.874    0.333    0.000       0.997       -0.004   0.7905
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           8   0.002  0.010  0.026            0.000
+         128   0.221  0.279  0.354            0.012
+    (31s)
+
+  rho_rank across the grid (1.000 = the Hopfield ranking IS cosine kNN):
+    arm                      b=8      b=128
+    baseline               0.006      0.422
+    DG (neg control)       0.005      0.392

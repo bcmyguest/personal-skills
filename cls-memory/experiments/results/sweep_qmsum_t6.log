@@ -1,0 +1,80 @@
+qmsum: 25 conversations, 14431 turns, LSA-1024, 6 threads
+grid: 4 separation arms x 5 betas = 20 cells
+!! single-corpus run; the both-corpora overfitting guard is NOT in force for these numbers on their own
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+
+  baseline   (n=170 questions, aniso_emb +0.056, aniso_key +0.056)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.324  0.694  0.824         --        --       --       --          --           --       --
+         2   0.071  0.276  0.412      0.088     0.006    0.068    1.000       0.462       -0.253   0.0000
+         8   0.047  0.229  0.365      0.145     0.000    0.060    1.000       0.324       -0.276   0.0000
+        32   0.324  0.535  0.659      0.506     0.835    0.386    0.082       0.981       +0.000   1.0000
+       128   0.335  0.541  0.682      0.503     0.976    0.384    0.012       1.000       +0.012   0.5000
+       512   0.324  0.535  0.676      0.501     0.994    0.382    0.000       1.000       +0.000   1.0000
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           2   0.071  0.276  0.412            0.000
+           8   0.047  0.229  0.365            0.000
+          32   0.324  0.535  0.659            0.000
+         128   0.335  0.541  0.682            0.018
+         512   0.324  0.365  0.371            1.000
+    (1011s)
+
+  whitened   (n=170 questions, aniso_emb +0.000, aniso_key +0.000)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.335  0.676  0.794         --        --       --       --          --           --       --
+         2   0.065  0.182  0.288      0.056     0.000    0.033    1.000       0.319       -0.271   0.0000
+         8   0.065  0.153  0.282      0.054     0.000    0.034    1.000       0.199       -0.271   0.0000
+        32   0.341  0.559  0.718      0.302     0.947    0.441    0.041       0.995       +0.006   1.0000
+       128   0.335  0.559  0.718      0.298     0.982    0.439    0.000       1.000       +0.000   1.0000
+       512   0.335  0.559  0.718      0.300     0.994    0.439    0.000       1.000       +0.000   1.0000
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           2   0.065  0.182  0.288            0.000
+           8   0.065  0.153  0.282            0.000
+          32   0.341  0.559  0.718            0.000
+         128   0.335  0.571  0.671            0.676
+         512   0.335  0.382  0.382            1.000
+    (1110s)
+
+  DG (neg control)   (n=170 questions, aniso_emb +0.056, aniso_key +0.143)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.276  0.629  0.782         --        --       --       --          --           --       --
+         2   0.053  0.218  0.371      0.104     0.000    0.064    1.000       0.436       -0.224   0.0000
+         8   0.053  0.206  0.353      0.107     0.000    0.055    1.000       0.092       -0.224   0.0000
+        32   0.206  0.424  0.553      0.405     0.506    0.281    0.371       0.919       -0.071   0.0075
+       128   0.271  0.524  0.653      0.433     0.988    0.344    0.006       0.999       -0.006   1.0000
+       512   0.271  0.524  0.653      0.433     0.988    0.344    0.006       1.000       -0.006   1.0000
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           2   0.053  0.218  0.371            0.000
+           8   0.053  0.206  0.353            0.000
+          32   0.206  0.424  0.553            0.000
+         128   0.271  0.524  0.653            0.024
+         512   0.271  0.312  0.324            1.000
+    (1235s)
+
+  both   (n=170 questions, aniso_emb +0.000, aniso_key +0.118)
+      beta      @1     @5    @10   rho_rank  top1=cos  ovlp@10  mixture  rho_signal   d@1 vs cos        p
+    cosine   0.365  0.688  0.788         --        --       --       --          --           --       --
+         2   0.047  0.176  0.282      0.041     0.012    0.038    1.000       0.079       -0.318   0.0000
+         8   0.053  0.171  0.271      0.050     0.012    0.043    1.000      -0.081       -0.312   0.0000
+        32   0.282  0.476  0.600      0.240     0.618    0.311    0.335       0.911       -0.082   0.0001
+       128   0.365  0.559  0.712      0.292     0.994    0.403    0.006       0.999       +0.000   1.0000
+       512   0.365  0.559  0.712      0.291     1.000    0.399    0.000       1.000       +0.000   1.0000
+    shipped read path (ranks by trace.weights; ties broken by index order once the softmax underflows):
+        beta      @1     @5    @10   tied questions
+           2   0.047  0.176  0.282            0.000
+           8   0.053  0.171  0.271            0.000
+          32   0.282  0.476  0.600            0.000
+         128   0.365  0.565  0.676            0.571
+         512   0.365  0.412  0.418            1.000
+    (1214s)
+
+  rho_rank across the grid (1.000 = the Hopfield ranking IS cosine kNN):
+    arm                      b=2        b=8       b=32      b=128      b=512
+    baseline               0.088      0.145      0.506      0.503      0.501
+    whitened               0.056      0.054      0.302      0.298      0.300
+    DG (neg control)       0.104      0.107      0.405      0.433      0.433
+    both                   0.041      0.050      0.240      0.292      0.291

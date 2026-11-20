@@ -1,0 +1,26 @@
+qmsum: 8 conversations, 4201 turns, 6 threads
+
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+  baseline (LSA-1024, key=embedding)    0.396   0.623   0.736   aniso_emb +0.048  aniso_key +0.048   (53 q, 215s)
+  whitened  (raises separation)         0.415   0.660   0.792   aniso_emb +0.000  aniso_key +0.000   (53 q, 337s)
+  DG key    (LOWERS separation)         0.358   0.585   0.679   aniso_emb +0.048  aniso_key +0.139   (53 q, 290s)
+  both                                  0.434   0.604   0.717   aniso_emb +0.000  aniso_key +0.118   (53 q, 357s)
+
+  exact paired McNemar vs baseline, hit@1 (n=53):
+    arm                                     delta   b01   b10         p  verdict
+    whitened  (raises separation)          +0.019     4     3    1.0000  tie (not resolvable)
+    DG key    (LOWERS separation)          -0.038     1     3    0.6250  tie (not resolvable)
+    both                                   +0.038     5     3    0.7266  tie (not resolvable)
+
+  exact paired McNemar vs baseline, hit@10 (n=53):
+    arm                                     delta   b01   b10         p  verdict
+    whitened  (raises separation)          +0.057     5     2    0.4531  tie (not resolvable)
+    DG key    (LOWERS separation)          -0.057     3     6    0.5078  tie (not resolvable)
+    both                                   -0.019     5     6    1.0000  tie (not resolvable)
+
+  separation actually achieved (lower anisotropy = better separated):
+    baseline (LSA-1024, key=embedding)   aniso_key +0.048
+    whitened  (raises separation)        aniso_key +0.000
+    DG key    (LOWERS separation)        aniso_key +0.139
+    both                                 aniso_key +0.118

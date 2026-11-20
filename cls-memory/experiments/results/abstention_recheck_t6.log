@@ -1,0 +1,274 @@
+locomo: 10 conversations, 6 threads
+!! single-corpus run; no cross-corpus overfitting guard is applied to these numbers on their own
+
+==================== PROTOCOL A: IV.1 replication (PRIMARY) ====================
+Uses abstention.collect() UNMODIFIED with IV.1's exact hybrid factory. Only this protocol's numbers may confirm/narrow/withdraw Part IV's verdict.
+grid: 2 arms x 3 betas = 6 cells, 30 paired tests -> Bonferroni alpha = 0.05/30 = 0.00167
+
+  [A: IV.1 replication] baseline @ beta=8  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.480 [0.450, 0.510]  rejects 20.6% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.471 [0.440, 0.502]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.6858
+    neg_attn_ent     AUC 0.501 [0.468, 0.533]  rejects 20.0% @ 80% coverage  rho vs cos_top1 +0.1593
+    log_density      AUC 0.518 [0.488, 0.549]  rejects 21.3% @ 80% coverage  rho vs cos_top1 +0.2423
+    neg_depth_nats   AUC 0.509 [0.479, 0.538]  rejects 19.7% @ 80% coverage  rho vs cos_top1 +0.2849
+    neg_settle       AUC 0.520 [0.490, 0.549]  rejects 22.9% @ 80% coverage  rho vs cos_top1 +0.3551
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta -0.009 [-0.033, +0.013] TIE    corrected [-0.042, +0.031] does not survive
+      neg_attn_ent     delta +0.021 [-0.017, +0.060] TIE    corrected [-0.039, +0.082] does not survive
+      log_density      delta +0.038 [+0.001, +0.075] WINS   corrected [-0.021, +0.099] does not survive
+      neg_depth_nats   delta +0.029 [-0.007, +0.066] TIE    corrected [-0.029, +0.086] does not survive
+      neg_settle       delta +0.040 [+0.007, +0.073] WINS   corrected [-0.015, +0.091] does not survive
+    out-of-fold: cosine only 0.512  cosine+energy 0.522  everything 0.525  (energy adds +0.009)
+
+  [A: IV.1 replication] baseline @ beta=32  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.480 [0.449, 0.510]  rejects 20.6% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.471 [0.440, 0.502]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.6858
+    neg_attn_ent     AUC 0.471 [0.441, 0.502]  rejects 19.3% @ 80% coverage  rho vs cos_top1 +0.9234
+    log_density      AUC 0.504 [0.472, 0.535]  rejects 21.1% @ 80% coverage  rho vs cos_top1 +0.8351
+    neg_depth_nats   AUC 0.503 [0.472, 0.534]  rejects 21.5% @ 80% coverage  rho vs cos_top1 +0.8515
+    neg_settle       AUC 0.523 [0.492, 0.553]  rejects 24.0% @ 80% coverage  rho vs cos_top1 +0.2675
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta -0.009 [-0.033, +0.016] TIE    corrected [-0.052, +0.029] does not survive
+      neg_attn_ent     delta -0.009 [-0.021, +0.002] TIE    corrected [-0.032, +0.010] does not survive
+      log_density      delta +0.024 [+0.008, +0.041] WINS   corrected [-0.005, +0.052] does not survive
+      neg_depth_nats   delta +0.023 [+0.008, +0.039] WINS   corrected [-0.002, +0.048] does not survive
+      neg_settle       delta +0.043 [+0.008, +0.081] WINS   corrected [-0.023, +0.100] does not survive
+    out-of-fold: cosine only 0.512  cosine+energy 0.523  everything 0.507  (energy adds +0.011)
+
+  [A: IV.1 replication] baseline @ beta=128  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.480 [0.448, 0.511]  rejects 20.6% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.471 [0.441, 0.502]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.6858
+    neg_attn_ent     AUC 0.465 [0.436, 0.496]  rejects 16.6% @ 80% coverage  rho vs cos_top1 +0.7660
+    log_density      AUC 0.481 [0.449, 0.514]  rejects 21.1% @ 80% coverage  rho vs cos_top1 +0.9989
+    neg_depth_nats   AUC 0.481 [0.451, 0.512]  rejects 20.9% @ 80% coverage  rho vs cos_top1 +0.9993
+    neg_settle       AUC 0.505 [0.475, 0.536]  rejects 20.6% @ 80% coverage  rho vs cos_top1 +0.2592
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta -0.009 [-0.034, +0.016] TIE    corrected [-0.049, +0.035] does not survive
+      neg_attn_ent     delta -0.015 [-0.036, +0.006] TIE    corrected [-0.047, +0.014] does not survive
+      log_density      delta +0.001 [-0.000, +0.003] TIE    corrected [-0.001, +0.003] does not survive
+      neg_depth_nats   delta +0.001 [-0.000, +0.002] TIE    corrected [-0.001, +0.003] does not survive
+      neg_settle       delta +0.025 [-0.009, +0.061] TIE    corrected [-0.033, +0.078] does not survive
+    out-of-fold: cosine only 0.512  cosine+energy 0.512  everything 0.515  (energy adds -0.000)
+
+  reproduction check vs RESULTS.md IV.1 (beta=128, baseline, tol=0.05; smoke-scale n=1977 vs IV.1's n=1977, so an exact match is not expected -- this checks the CODE PATH, not sample-size-matched agreement):
+    cos_top1         measured 0.480  published 0.480  diff -0.000  [OK]
+    log_density      measured 0.481  published 0.481  diff +0.000  [OK]
+    neg_depth_nats   measured 0.481  published 0.481  diff -0.000  [OK]
+    neg_settle       measured 0.505  published 0.505  diff +0.000  [OK]
+  (baseline: 372s)
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 419 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 419-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 369 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 369-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 663 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 663-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 629 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 629-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 680 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 680-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 675 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 675-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 689 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 689-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 681 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 681-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 509 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 509-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+/home/b/personal-skills/cls-memory/cls_memory/whitening.py:350: UserWarning: whitening fitted on 568 samples in 4480 dimensions: the covariance is rank-deficient, so transform() projects onto the 568-dimensional fitted subspace and discards the rest. Fit on more documents.
+  self.whitener.fit(self.embedder.encode(list(texts)))
+
+  [A: IV.1 replication] whitened @ beta=8  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.438 [0.407, 0.470]  rejects 15.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.457 [0.427, 0.488]  rejects 17.9% @ 80% coverage  rho vs cos_top1 +0.8511
+    neg_attn_ent     AUC 0.473 [0.441, 0.504]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.5686
+    log_density      AUC 0.455 [0.424, 0.485]  rejects 17.3% @ 80% coverage  rho vs cos_top1 +0.8311
+    neg_depth_nats   AUC 0.471 [0.439, 0.501]  rejects 17.7% @ 80% coverage  rho vs cos_top1 +0.3390
+    neg_settle       AUC 0.449 [0.419, 0.478]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.9013
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta +0.019 [+0.002, +0.036] WINS   corrected [-0.008, +0.049] does not survive
+      neg_attn_ent     delta +0.035 [+0.009, +0.061] WINS   corrected [-0.010, +0.077] does not survive
+      log_density      delta +0.016 [-0.000, +0.032] TIE    corrected [-0.009, +0.044] does not survive
+      neg_depth_nats   delta +0.032 [-0.003, +0.069] TIE    corrected [-0.035, +0.089] does not survive
+      neg_settle       delta +0.010 [-0.002, +0.023] TIE    corrected [-0.008, +0.030] does not survive
+    out-of-fold: cosine only 0.557  cosine+energy 0.556  everything 0.555  (energy adds -0.001)
+
+  [A: IV.1 replication] whitened @ beta=32  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.438 [0.409, 0.468]  rejects 15.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.457 [0.426, 0.487]  rejects 17.9% @ 80% coverage  rho vs cos_top1 +0.8511
+    neg_attn_ent     AUC 0.441 [0.411, 0.471]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.9875
+    log_density      AUC 0.439 [0.410, 0.470]  rejects 16.6% @ 80% coverage  rho vs cos_top1 +0.9948
+    neg_depth_nats   AUC 0.437 [0.409, 0.467]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.9975
+    neg_settle       AUC 0.495 [0.465, 0.525]  rejects 19.1% @ 80% coverage  rho vs cos_top1 -0.1960
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta +0.019 [+0.002, +0.035] WINS   corrected [-0.009, +0.045] does not survive
+      neg_attn_ent     delta +0.003 [-0.002, +0.008] TIE    corrected [-0.005, +0.011] does not survive
+      log_density      delta +0.001 [-0.002, +0.003] TIE    corrected [-0.005, +0.006] does not survive
+      neg_depth_nats   delta -0.001 [-0.004, +0.001] TIE    corrected [-0.005, +0.002] does not survive
+      neg_settle       delta +0.057 [+0.012, +0.102] WINS   corrected [-0.021, +0.135] does not survive
+    out-of-fold: cosine only 0.557  cosine+energy 0.554  everything 0.551  (energy adds -0.003)
+
+  [A: IV.1 replication] whitened @ beta=128  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.438 [0.406, 0.468]  rejects 15.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.457 [0.426, 0.489]  rejects 17.9% @ 80% coverage  rho vs cos_top1 +0.8511
+    neg_attn_ent     AUC 0.455 [0.424, 0.484]  rejects 16.8% @ 80% coverage  rho vs cos_top1 +0.8661
+    log_density      AUC 0.438 [0.407, 0.469]  rejects 15.5% @ 80% coverage  rho vs cos_top1 +0.9998
+    neg_depth_nats   AUC 0.438 [0.408, 0.469]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.9999
+    neg_settle       AUC 0.443 [0.412, 0.471]  rejects 13.9% @ 80% coverage  rho vs cos_top1 +0.7116
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00167 CI):
+      cos_margin       delta +0.019 [+0.002, +0.034] WINS   corrected [-0.008, +0.047] does not survive
+      neg_attn_ent     delta +0.016 [+0.001, +0.032] WINS   corrected [-0.011, +0.044] does not survive
+      log_density      delta -0.000 [-0.001, +0.001] TIE    corrected [-0.001, +0.001] does not survive
+      neg_depth_nats   delta -0.000 [-0.001, +0.000] TIE    corrected [-0.001, +0.000] does not survive
+      neg_settle       delta +0.004 [-0.018, +0.027] TIE    corrected [-0.031, +0.038] does not survive
+    out-of-fold: cosine only 0.557  cosine+energy 0.557  everything 0.551  (energy adds +0.000)
+  (whitened: 574s)
+
+==================== PROTOCOL B: full system (SECONDARY, NOT comparable to IV.1) ====================
+Different write path (LSA embeddings, cortex-derived key, salience priors) than IV.1's bare-MHN hybrid store. Exists to carry the DG negative control, which needs a key encoder.
+grid: 3 separation arms x 3 betas = 9 cells, 45 paired tests -> Bonferroni alpha = 0.05/45 = 0.00111
+/home/b/personal-skills/cls-memory/cls_memory/embeddings.py:185: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/Context.cpp:816.)
+  return torch.sparse_coo_tensor(
+
+[B: full system] baseline: question-length confound AUC 0.421 [0.393, 0.451]
+
+  [B: full system] baseline @ beta=8  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.478 [0.447, 0.508]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.466 [0.436, 0.499]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.6556
+    neg_attn_ent     AUC 0.498 [0.466, 0.529]  rejects 21.5% @ 80% coverage  rho vs cos_top1 +0.3422
+    log_density      AUC 0.541 [0.512, 0.573]  rejects 25.6% @ 80% coverage  rho vs cos_top1 +0.2852
+    neg_depth_nats   AUC 0.520 [0.490, 0.548]  rejects 21.1% @ 80% coverage  rho vs cos_top1 +0.0640
+    neg_settle       AUC 0.535 [0.504, 0.567]  rejects 26.2% @ 80% coverage  rho vs cos_top1 +0.5075
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.011 [-0.035, +0.014] TIE    corrected [-0.049, +0.032] does not survive
+      neg_attn_ent     delta +0.020 [-0.016, +0.054] TIE    corrected [-0.036, +0.076] does not survive
+      log_density      delta +0.063 [+0.027, +0.099] WINS   corrected [+0.001, +0.116] SURVIVES
+      neg_depth_nats   delta +0.042 [+0.000, +0.087] WINS   corrected [-0.025, +0.114] does not survive
+      neg_settle       delta +0.057 [+0.029, +0.089] WINS   corrected [+0.015, +0.113] SURVIVES
+    out-of-fold: cosine only 0.513  cosine+energy 0.534  everything 0.529  (energy adds +0.022)
+
+  [B: full system] baseline @ beta=32  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.478 [0.448, 0.510]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.466 [0.436, 0.495]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.6556
+    neg_attn_ent     AUC 0.459 [0.427, 0.490]  rejects 17.9% @ 80% coverage  rho vs cos_top1 +0.8303
+    log_density      AUC 0.490 [0.458, 0.521]  rejects 22.6% @ 80% coverage  rho vs cos_top1 +0.8881
+    neg_depth_nats   AUC 0.487 [0.457, 0.517]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.8389
+    neg_settle       AUC 0.527 [0.497, 0.557]  rejects 24.7% @ 80% coverage  rho vs cos_top1 +0.0703
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.011 [-0.037, +0.013] TIE    corrected [-0.050, +0.025] does not survive
+      neg_attn_ent     delta -0.019 [-0.036, -0.002] LOSES  corrected [-0.045, +0.011] does not survive
+      log_density      delta +0.012 [-0.002, +0.028] TIE    corrected [-0.010, +0.037] does not survive
+      neg_depth_nats   delta +0.009 [-0.008, +0.026] TIE    corrected [-0.019, +0.036] does not survive
+      neg_settle       delta +0.049 [+0.009, +0.092] WINS   corrected [-0.016, +0.113] does not survive
+    out-of-fold: cosine only 0.513  cosine+energy 0.512  everything 0.517  (energy adds -0.001)
+
+  [B: full system] baseline @ beta=128  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.478 [0.446, 0.507]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.466 [0.435, 0.497]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.6556
+    neg_attn_ent     AUC 0.470 [0.438, 0.502]  rejects 20.6% @ 80% coverage  rho vs cos_top1 +0.6762
+    log_density      AUC 0.478 [0.448, 0.508]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.9902
+    neg_depth_nats   AUC 0.478 [0.450, 0.509]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.9979
+    neg_settle       AUC 0.477 [0.444, 0.509]  rejects 20.4% @ 80% coverage  rho vs cos_top1 +0.5785
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.011 [-0.036, +0.013] TIE    corrected [-0.053, +0.025] does not survive
+      neg_attn_ent     delta -0.007 [-0.030, +0.017] TIE    corrected [-0.049, +0.034] does not survive
+      log_density      delta +0.000 [-0.004, +0.004] TIE    corrected [-0.007, +0.007] does not survive
+      neg_depth_nats   delta -0.000 [-0.002, +0.002] TIE    corrected [-0.004, +0.003] does not survive
+      neg_settle       delta -0.001 [-0.029, +0.027] TIE    corrected [-0.048, +0.038] does not survive
+    out-of-fold: cosine only 0.513  cosine+energy 0.508  everything 0.537  (energy adds -0.005)
+  (baseline: 680s)
+
+[B: full system] whitened: question-length confound AUC 0.421 [0.393, 0.449]
+
+  [B: full system] whitened @ beta=8  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.473 [0.442, 0.504]  rejects 18.4% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.467 [0.433, 0.497]  rejects 19.3% @ 80% coverage  rho vs cos_top1 +0.6663
+    neg_attn_ent     AUC 0.503 [0.472, 0.534]  rejects 21.3% @ 80% coverage  rho vs cos_top1 +0.3581
+    log_density      AUC 0.542 [0.512, 0.575]  rejects 25.3% @ 80% coverage  rho vs cos_top1 +0.4049
+    neg_depth_nats   AUC 0.502 [0.473, 0.530]  rejects 17.7% @ 80% coverage  rho vs cos_top1 +0.0433
+    neg_settle       AUC 0.529 [0.497, 0.562]  rejects 25.6% @ 80% coverage  rho vs cos_top1 +0.5849
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.006 [-0.030, +0.017] TIE    corrected [-0.045, +0.032] does not survive
+      neg_attn_ent     delta +0.030 [-0.004, +0.065] TIE    corrected [-0.027, +0.096] does not survive
+      log_density      delta +0.069 [+0.038, +0.102] WINS   corrected [+0.010, +0.118] SURVIVES
+      neg_depth_nats   delta +0.029 [-0.015, +0.074] TIE    corrected [-0.042, +0.106] does not survive
+      neg_settle       delta +0.056 [+0.029, +0.085] WINS   corrected [+0.008, +0.103] SURVIVES
+    out-of-fold: cosine only 0.519  cosine+energy 0.516  everything 0.529  (energy adds -0.003)
+
+  [B: full system] whitened @ beta=32  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.473 [0.442, 0.504]  rejects 18.4% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.467 [0.436, 0.498]  rejects 19.3% @ 80% coverage  rho vs cos_top1 +0.6663
+    neg_attn_ent     AUC 0.459 [0.429, 0.489]  rejects 20.6% @ 80% coverage  rho vs cos_top1 +0.8756
+    log_density      AUC 0.480 [0.449, 0.512]  rejects 21.5% @ 80% coverage  rho vs cos_top1 +0.9223
+    neg_depth_nats   AUC 0.473 [0.444, 0.503]  rejects 17.7% @ 80% coverage  rho vs cos_top1 +0.8870
+    neg_settle       AUC 0.522 [0.492, 0.552]  rejects 23.3% @ 80% coverage  rho vs cos_top1 +0.0751
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.006 [-0.030, +0.020] TIE    corrected [-0.045, +0.031] does not survive
+      neg_attn_ent     delta -0.014 [-0.028, +0.000] TIE    corrected [-0.036, +0.008] does not survive
+      log_density      delta +0.007 [-0.004, +0.018] TIE    corrected [-0.013, +0.027] does not survive
+      neg_depth_nats   delta +0.000 [-0.014, +0.015] TIE    corrected [-0.023, +0.023] does not survive
+      neg_settle       delta +0.049 [+0.007, +0.090] WINS   corrected [-0.020, +0.114] does not survive
+    out-of-fold: cosine only 0.519  cosine+energy 0.508  everything 0.517  (energy adds -0.011)
+
+  [B: full system] whitened @ beta=128  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.473 [0.441, 0.504]  rejects 18.4% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.467 [0.437, 0.498]  rejects 19.3% @ 80% coverage  rho vs cos_top1 +0.6663
+    neg_attn_ent     AUC 0.469 [0.440, 0.502]  rejects 17.7% @ 80% coverage  rho vs cos_top1 +0.6915
+    log_density      AUC 0.474 [0.442, 0.504]  rejects 19.5% @ 80% coverage  rho vs cos_top1 +0.9929
+    neg_depth_nats   AUC 0.473 [0.444, 0.503]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.9988
+    neg_settle       AUC 0.479 [0.449, 0.509]  rejects 18.6% @ 80% coverage  rho vs cos_top1 +0.6599
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.006 [-0.030, +0.020] TIE    corrected [-0.046, +0.032] does not survive
+      neg_attn_ent     delta -0.004 [-0.028, +0.019] TIE    corrected [-0.041, +0.033] does not survive
+      log_density      delta +0.001 [-0.003, +0.005] TIE    corrected [-0.005, +0.006] does not survive
+      neg_depth_nats   delta -0.000 [-0.001, +0.001] TIE    corrected [-0.002, +0.003] does not survive
+      neg_settle       delta +0.007 [-0.018, +0.031] TIE    corrected [-0.027, +0.043] does not survive
+    out-of-fold: cosine only 0.519  cosine+energy 0.515  everything 0.515  (energy adds -0.004)
+  (whitened: 628s)
+
+[B: full system] DG (neg control): question-length confound AUC 0.421 [0.392, 0.451]
+
+  [B: full system] DG (neg control) @ beta=8  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.479 [0.448, 0.510]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.474 [0.443, 0.503]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.7040
+    neg_attn_ent     AUC 0.503 [0.472, 0.533]  rejects 21.5% @ 80% coverage  rho vs cos_top1 +0.1043
+    log_density      AUC 0.519 [0.488, 0.549]  rejects 20.2% @ 80% coverage  rho vs cos_top1 +0.2394
+    neg_depth_nats   AUC 0.505 [0.475, 0.535]  rejects 17.7% @ 80% coverage  rho vs cos_top1 +0.0209
+    neg_settle       AUC 0.521 [0.491, 0.551]  rejects 21.1% @ 80% coverage  rho vs cos_top1 +0.3718
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.005 [-0.030, +0.019] TIE    corrected [-0.043, +0.032] does not survive
+      neg_attn_ent     delta +0.024 [-0.017, +0.069] TIE    corrected [-0.048, +0.087] does not survive
+      log_density      delta +0.040 [+0.002, +0.078] WINS   corrected [-0.014, +0.107] does not survive
+      neg_depth_nats   delta +0.026 [-0.021, +0.070] TIE    corrected [-0.041, +0.102] does not survive
+      neg_settle       delta +0.042 [+0.008, +0.077] WINS   corrected [-0.012, +0.095] does not survive
+    out-of-fold: cosine only 0.511  cosine+energy 0.514  everything 0.508  (energy adds +0.003)
+
+  [B: full system] DG (neg control) @ beta=32  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.479 [0.446, 0.509]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.474 [0.442, 0.505]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.7040
+    neg_attn_ent     AUC 0.484 [0.452, 0.517]  rejects 21.3% @ 80% coverage  rho vs cos_top1 +0.7898
+    log_density      AUC 0.503 [0.473, 0.534]  rejects 22.6% @ 80% coverage  rho vs cos_top1 +0.7294
+    neg_depth_nats   AUC 0.488 [0.458, 0.518]  rejects 17.0% @ 80% coverage  rho vs cos_top1 +0.4155
+    neg_settle       AUC 0.545 [0.514, 0.576]  rejects 24.9% @ 80% coverage  rho vs cos_top1 +0.1402
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.005 [-0.029, +0.019] TIE    corrected [-0.040, +0.030] does not survive
+      neg_attn_ent     delta +0.005 [-0.015, +0.026] TIE    corrected [-0.027, +0.036] does not survive
+      log_density      delta +0.024 [+0.002, +0.047] WINS   corrected [-0.012, +0.061] does not survive
+      neg_depth_nats   delta +0.009 [-0.022, +0.043] TIE    corrected [-0.045, +0.064] does not survive
+      neg_settle       delta +0.066 [+0.026, +0.110] WINS   corrected [-0.000, +0.135] does not survive
+    out-of-fold: cosine only 0.511  cosine+energy 0.500  everything 0.533  (energy adds -0.011)
+
+  [B: full system] DG (neg control) @ beta=128  (n=1977: 1531 answerable, 446 adversarial)
+    cos_top1         AUC 0.479 [0.449, 0.509]  rejects 17.5% @ 80% coverage  (baseline)
+    cos_margin       AUC 0.474 [0.443, 0.505]  rejects 15.2% @ 80% coverage  rho vs cos_top1 +0.7040
+    neg_attn_ent     AUC 0.469 [0.437, 0.502]  rejects 18.2% @ 80% coverage  rho vs cos_top1 +0.7825
+    log_density      AUC 0.481 [0.449, 0.512]  rejects 20.6% @ 80% coverage  rho vs cos_top1 +0.9761
+    neg_depth_nats   AUC 0.480 [0.451, 0.511]  rejects 17.5% @ 80% coverage  rho vs cos_top1 +0.9859
+    neg_settle       AUC 0.503 [0.473, 0.533]  rejects 20.6% @ 80% coverage  rho vs cos_top1 -0.0607
+    paired vs cos_top1 (95% CI, then Bonferroni-corrected alpha=0.00111 CI):
+      cos_margin       delta -0.005 [-0.030, +0.018] TIE    corrected [-0.045, +0.032] does not survive
+      neg_attn_ent     delta -0.010 [-0.030, +0.010] TIE    corrected [-0.040, +0.025] does not survive
+      log_density      delta +0.002 [-0.005, +0.009] TIE    corrected [-0.008, +0.012] does not survive
+      neg_depth_nats   delta +0.001 [-0.004, +0.006] TIE    corrected [-0.010, +0.010] does not survive
+      neg_settle       delta +0.024 [-0.019, +0.067] TIE    corrected [-0.057, +0.094] does not survive
+    out-of-fold: cosine only 0.511  cosine+energy 0.503  everything 0.501  (energy adds -0.008)
+  (DG (neg control): 619s)
