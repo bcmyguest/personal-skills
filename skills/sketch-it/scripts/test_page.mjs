@@ -29,11 +29,29 @@ test('puts the note inside the region and nests the call tree', () => {
   assert.match(html, /<title>Token check<\/title>/);
   assert.match(html, /Where the token is checked/);
   assert.match(html, /<div class="region"><strong>Toolbar<\/strong><p>owns Run<\/p><\/div>/);
-  assert.match(html, /<li>handleRequest<ul><li>authenticate<ul><li>loadSession/);
+  assert.match(html, /<li><span class="name">handleRequest<\/span><ul><li><span class="name">authenticate<\/span><ul><li><span class="name">loadSession<\/span>/);
   assert.match(html, /class="add"/);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /max-width: 360px/);
   assert.match(html, /minmax\(220px/);
+});
+
+test('draws a component nest and a topology with the note on the part', () => {
+  const html = renderPage(spec([
+    { kind: 'components', text: '<SettingsPage> (src/routes/settings.tsx)\n  useSettings()\n  <SettingsForm>' },
+    { kind: 'tree', text: 'src\n  routes # page entry' },
+    { kind: 'topology', rows: [
+      { label: 'Side by side', items: [{ name: 'Editor', note: 'writes' }, { name: 'Preview', note: 'reads' }] },
+      { label: 'Under both', items: [{ name: 'Store', note: 'the one copy' }] },
+    ] },
+  ]));
+  assert.match(html, /<strong>SettingsPage<\/strong><span class="path">src\/routes\/settings.tsx<\/span>/);
+  assert.match(html, /class="hook">useSettings\(\)/);
+  assert.match(html, /class="name">routes<\/span><span class="note">page entry/);
+  assert.match(html, /Color is the layer/);
+  assert.match(html, /class="t0"/);
+  assert.match(html, /class="t1"/);
+  assert.match(html, /<strong>Store<\/strong><p>the one copy<\/p>/);
 });
 
 test('escapes text that would break the page', () => {
@@ -52,6 +70,8 @@ test('a mermaid block is checked and inlined; a broken one is refused', () => {
   assert.match(r, /wrote /);
   const html = readFileSync(out, 'utf8');
   assert.match(html, /class="mermaid"/);
+  assert.match(html, /class="source"/);
+  assert.match(html, />Copy</);
   assert.match(html, /mermaid\.initialize/);
   assert.ok(html.length > 100_000);
 

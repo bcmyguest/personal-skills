@@ -1,6 +1,6 @@
 {
   "title": "What one sketch-it page can hold",
-  "point": "Six views, one file. The label sits on the thing it names.",
+  "point": "The label sits on the thing it names. Color marks a layer.",
   "blocks": [
     {
       "kind": "screen",
@@ -9,6 +9,30 @@
         { "name": "Toolbar", "note": "the one action on this screen" },
         { "name": "Form", "note": "the fields the user edits" },
         { "name": "Status", "note": "what just happened, next to the form" }
+      ]
+    },
+    {
+      "kind": "components",
+      "title": "Which component owns what",
+      "text": "<SettingsPage> (src/routes/settings.tsx)\n  useSettings()\n  <SettingsForm> (src/components/settings-form.tsx)\n    <SaveButton>"
+    },
+    {
+      "kind": "topology",
+      "title": "What sits side by side, and what they share",
+      "rows": [
+        {
+          "label": "Side by side",
+          "items": [
+            { "name": "Editor", "note": "writes the draft" },
+            { "name": "Preview", "note": "reads the draft" }
+          ]
+        },
+        {
+          "label": "Under both",
+          "items": [
+            { "name": "Store", "note": "the one copy of the draft" }
+          ]
+        }
       ]
     },
     {
@@ -30,9 +54,9 @@
       "text": " handleRequest\n   authenticate\n     loadSession\n   dispatch\n+    authorize\n     queryStore"
     },
     {
-      "kind": "pre",
+      "kind": "tree",
       "title": "Which files own what",
-      "text": "src/\n├── routes/        # page entry, loads data\n├── components/    # renders one screen region\n└── api/           # talks to the server"
+      "text": "src\n  routes # page entry, loads data\n  components # renders one screen region\n  api # talks to the server"
     },
     {
       "kind": "mermaid",

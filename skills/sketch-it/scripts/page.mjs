@@ -4,12 +4,14 @@
 //   node page.mjs SPEC.json [-o OUT.html]
 //
 // The spec is { "title", "point"?, "blocks": [ ... ] }. Block kinds:
-//   tree     { "text" }            indented names, two spaces per level
-//   pre      { "text" }            pseudocode or a file tree, monospaced
-//   diff     { "text" }            lines starting with + or - are the change
-//   columns  { "items": [ { "title", "text" } ] }
-//   screen   { "regions": [ { "name", "note"? } ] }
-//   mermaid  { "source" }          checked with diagram.mjs before the page is written
+//   tree       { "text" }          indented names, two spaces per level; "name # note" puts the note on the node
+//   components { "text" }          indented <Component> (path) lines, hooks on their own lines
+//   topology   { "rows" }          each row is a layer: parallel items side by side, color is the layer
+//   pre        { "text" }          pseudocode, monospaced
+//   diff       { "text" }          lines starting with + or - are the change
+//   columns    { "items": [ { "title", "text" } ] }
+//   screen     { "regions": [ { "name", "note"? } ] }
+//   mermaid    { "source" }        checked with diagram.mjs before the page is written
 // Each block may also have "title". No network, no navigation. A mermaid block
 // inlines Mermaid's own browser build so the file still opens offline.
 
@@ -20,7 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readMermaidJs } from './diagram.mjs';
 
-const KINDS = new Set(['tree', 'pre', 'diff', 'columns', 'screen', 'mermaid']);
+const KINDS = new Set(['tree', 'components', 'topology', 'pre', 'diff', 'columns', 'screen', 'mermaid']);
 
 export function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -41,8 +43,19 @@ function blockProblems(b, i) {
   if (!b || typeof b !== 'object') return [`${at} must be an object`];
   if (!KINDS.has(b.kind)) return [`${at}.kind must be one of ${[...KINDS].join(', ')}`];
   if (b.title !== undefined && typeof b.title !== 'string') return [`${at}.title must be a string`];
-  if (b.kind === 'tree' || b.kind === 'pre' || b.kind === 'diff') {
+  if (b.kind === 'tree' || b.kind === 'components' || b.kind === 'pre' || b.kind === 'diff') {
     if (typeof b.text !== 'string' || !b.text.trim()) return [`${at}.text is required`];
+  }
+  if (b.kind === 'topology') {
+    if (!Array.isArray(b.rows) || b.rows.length === 0) return [`${at}.rows is required`];
+    return b.rows.flatMap((row, j) => {
+      if (!row || !Array.isArray(row.items) || row.items.length === 0) return [`${at}.rows[${j}].items is required`];
+      return row.items.flatMap((item, k) => {
+        if (!item || typeof item.name !== 'string' || !item.name.trim()) return [`${at}.rows[${j}].items[${k}].name is required`];
+        if (item.note !== undefined && typeof item.note !== 'string') return [`${at}.rows[${j}].items[${k}].note must be a string`];
+        return [];
+      });
+    });
   }
   if (b.kind === 'mermaid' && (typeof b.source !== 'string' || !b.source.trim())) return [`${at}.source is required`];
   if (b.kind === 'columns') {
@@ -79,10 +92,44 @@ function parseTree(text) {
   return root.children;
 }
 
+function splitNote(label) {
+  const m = label.match(/^(.*?)\s+#\s+(.+)$/);
+  return m ? { name: m[1], note: m[2] } : { name: label, note: '' };
+}
+
 function renderNodes(nodes) {
   if (nodes.length === 0) return '';
-  const items = nodes.map((n) => `<li>${escapeHtml(n.label)}${renderNodes(n.children)}</li>`).join('');
+  const items = nodes.map((n) => {
+    const { name, note } = splitNote(n.label);
+    const aside = note ? `<span class="note">${escapeHtml(note)}</span>` : '';
+    return `<li><span class="name">${escapeHtml(name)}</span>${aside}${renderNodes(n.children)}</li>`;
+  }).join('');
   return `<ul>${items}</ul>`;
+}
+
+function renderComponents(nodes) {
+  if (nodes.length === 0) return '';
+  const items = nodes.map((n) => {
+    const comp = n.label.match(/^<([^>]+)>\s*(?:\(([^)]+)\))?$/);
+    const inner = renderComponents(n.children);
+    if (!comp) return `<li class="hook">${escapeHtml(n.label)}${inner}</li>`;
+    const path = comp[2] ? `<span class="path">${escapeHtml(comp[2])}</span>` : '';
+    return `<li class="box"><strong>${escapeHtml(comp[1])}</strong>${path}${inner}</li>`;
+  }).join('');
+  return `<ul>${items}</ul>`;
+}
+
+function renderTopology(rows) {
+  const legend = rows.length > 1 ? '<p class="legend">Color is the layer.</p>' : '';
+  const body = rows.map((row, i) => {
+    const label = row.label ? `<p class="rowlabel">${escapeHtml(row.label)}</p>` : '';
+    const items = row.items.map((item) => {
+      const note = item.note ? `<p>${escapeHtml(item.note)}</p>` : '';
+      return `<article class="t${i % 3}"><strong>${escapeHtml(item.name)}</strong>${note}</article>`;
+    }).join('');
+    return `<div class="topo-row">${label}<div class="topo-items">${items}</div></div>`;
+  }).join('');
+  return `<div class="topo">${legend}${body}</div>`;
 }
 
 function renderDiff(text) {
@@ -96,6 +143,8 @@ function renderBlock(b) {
   const heading = b.title ? `<h2>${escapeHtml(b.title)}</h2>` : '';
   let body = '';
   if (b.kind === 'tree') body = `<div class="tree">${renderNodes(parseTree(b.text))}</div>`;
+  else if (b.kind === 'components') body = `<div class="comp">${renderComponents(parseTree(b.text))}</div>`;
+  else if (b.kind === 'topology') body = renderTopology(b.rows);
   else if (b.kind === 'pre') body = `<pre>${escapeHtml(b.text)}</pre>`;
   else if (b.kind === 'diff') body = `<div class="diff">${renderDiff(b.text)}</div>`;
   else if (b.kind === 'columns') {
@@ -107,35 +156,153 @@ function renderBlock(b) {
       return `<div class="region"><strong>${escapeHtml(r.name)}</strong>${note}</div>`;
     }).join('');
     body = `<div class="screen">${regions}</div>`;
-  } else body = `<pre class="mermaid">${escapeHtml(b.source)}</pre>`;
+  } else body = `<figure class="diagram"><pre class="mermaid">${escapeHtml(b.source)}</pre>
+<div class="srcwrap"><button type="button">Copy</button><pre class="source">${escapeHtml(b.source)}</pre></div></figure>`;
   return `<section class="block">${heading}${body}</section>`;
 }
 
 const CSS = `
-body { font: 16px/1.45 system-ui, sans-serif; margin: 24px auto; max-width: 880px; padding: 0 16px; background: Canvas; color: CanvasText; }
-h1 { font-size: 1.25rem; margin: 0 0 8px; }
-.point { margin: 0 0 24px; }
-h2 { font-size: 1rem; margin: 0 0 8px; }
-h3 { font-size: 0.95rem; margin: 0 0 4px; }
-.block { margin: 0 0 28px; }
-.tree ul { list-style: none; margin: 0; padding-left: 16px; border-left: 1px solid color-mix(in srgb, CanvasText 35%, transparent); }
+:root {
+  --bg: #f3efe6;
+  --ink: #1c1915;
+  --muted: #6f675e;
+  --card: #fffcf7;
+  --fill: #efeae0;
+  --line: #e3dcd0;
+  --add: #e5f3e8;
+  --del: #f8e6e2;
+  --t0: #ffffff;
+  --t1: #e5f3e8;
+  --t2: #f3e6c8;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161412;
+    --ink: #f4efe6;
+    --muted: #b3a89c;
+    --card: #221f1b;
+    --fill: #2b2723;
+    --line: #3c362f;
+    --add: #1d3326;
+    --del: #3c2420;
+    --t0: #2a2622;
+    --t1: #243028;
+    --t2: #3a3020;
+  }
+}
+body {
+  font: 17px/1.5 ui-sans-serif, system-ui, sans-serif;
+  margin: 0 auto; max-width: 820px;
+  padding: 56px 28px 96px;
+  background: var(--bg); color: var(--ink);
+}
+h1 {
+  font-family: ui-serif, Georgia, Palatino, serif;
+  font-size: 2.35rem; font-weight: 500; letter-spacing: -0.03em;
+  line-height: 1.12; margin: 0 0 12px;
+}
+.point { margin: 0 0 40px; max-width: 38rem; color: var(--muted); font-size: 1.05rem; }
+h2 {
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 14px;
+}
+h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 6px; }
+.block { margin: 0 0 40px; }
+.tree ul { list-style: none; margin: 0; padding: 2px 0 2px 18px; border-left: 1px solid var(--line); }
 .tree > ul { padding-left: 0; border-left: 0; }
-.tree li { margin: 4px 0; }
-pre, .diff { font: 14px/1.4 ui-monospace, monospace; margin: 0; white-space: pre-wrap; }
-.diff .add { background: color-mix(in srgb, green 22%, transparent); }
-.diff .del { background: color-mix(in srgb, red 22%, transparent); }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.cols section, .region { border: 1px solid color-mix(in srgb, CanvasText 35%, transparent); padding: 12px; }
-.cols p, .region p { margin: 4px 0 0; white-space: pre-wrap; }
-.screen { display: grid; gap: 8px; max-width: 360px; }
-.mermaid { margin: 0; }
+.tree li { margin: 0; padding: 7px 0 7px 2px; }
+.tree .name { font-weight: 600; }
+.tree .note { color: var(--muted); margin-left: 8px; }
+.comp ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.comp > ul { margin-top: 0; }
+.comp .box { border: 1.5px solid var(--ink); border-radius: 14px; padding: 10px 12px; background: var(--card); }
+.comp .box > strong { display: block; }
+.comp .path, .comp .hook { color: var(--muted); font-size: 0.85rem; font-weight: 400; }
+.comp .path { display: block; margin-top: 2px; }
+.topo { display: grid; gap: 14px; }
+.legend, .rowlabel { margin: 0 0 8px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.topo-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.topo article { border: 1.5px solid var(--ink); border-radius: 14px; padding: 12px 14px; }
+.topo article p { margin: 4px 0 0; color: var(--muted); }
+.topo .t0 { background: var(--t0); }
+.topo .t1 { background: var(--t1); }
+.topo .t2 { background: var(--t2); }
+pre, .diff {
+  font: 13.5px/1.55 ui-monospace, monospace;
+  margin: 0; white-space: pre-wrap;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 18px;
+}
+.diff .add, .diff .del, .diff .ctx { padding: 1px 8px; border-radius: 6px; }
+.diff .add { background: var(--add); }
+.diff .del { background: var(--del); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.cols section { background: var(--card); border-radius: 16px; padding: 18px 20px; }
+.cols p, .region p { margin: 0; white-space: pre-wrap; color: var(--muted); }
+.region strong { display: block; font-weight: 600; margin-bottom: 2px; }
+.screen {
+  display: grid; gap: 8px; max-width: 360px;
+  background: var(--card); border-radius: 28px; padding: 14px;
+  box-shadow: 0 1px 0 var(--line), 0 18px 40px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.region { background: var(--fill); border-radius: 16px; padding: 14px 16px; }
+.mermaid { background: var(--card); border-radius: 16px; padding: 12px; }
+figure.diagram { margin: 0; }
+.srcwrap { margin-top: 12px; }
+.srcwrap button {
+  font: 600 0.72rem/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--ink); color: var(--bg);
+  border: 0; border-radius: 999px; padding: 7px 12px; cursor: pointer;
+}
+.srcwrap .source { margin-top: 8px; }
 `;
 
 export function renderPage(spec, mermaidJs = '') {
   const blocks = spec.blocks.map(renderBlock).join('\n');
   const point = spec.point ? `<p class="point">${escapeHtml(spec.point)}</p>` : '';
   const js = mermaidJs ? `<script>${mermaidJs.replace(/<\/script/gi, '<\\/script')}</script>
-<script>mermaid.initialize({ startOnLoad: true, securityLevel: 'strict', theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' });</script>` : '';
+<script>
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const ink = dark ? '#f4efe6' : '#1a1612';
+const paper = dark ? '#161412' : '#ffffff';
+mermaid.initialize({
+  startOnLoad: true,
+  securityLevel: 'strict',
+  theme: 'base',
+  themeVariables: {
+    darkMode: dark,
+    background: dark ? '#221f1b' : '#fffcf7',
+    primaryColor: paper, primaryTextColor: ink, primaryBorderColor: ink,
+    secondaryColor: dark ? '#243028' : '#e5f3e8',
+    tertiaryColor: dark ? '#221f1b' : '#fffcf7',
+    lineColor: ink, textColor: ink,
+    actorBkg: paper, actorBorder: ink, actorTextColor: ink, actorLineColor: ink,
+    signalColor: ink, signalTextColor: ink,
+    noteBkgColor: dark ? '#243028' : '#e5f3e8', noteTextColor: ink, noteBorderColor: ink,
+    fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+  },
+  themeCSS: '.actor-line, .messageLine0, .messageLine1, .flowchart-link, .edgePath .path { stroke: ' + ink + '; stroke-width: 1.75px; } .actor, .node rect, .node polygon, .node circle { stroke: ' + ink + '; stroke-width: 1.75px; }'
+});
+document.querySelectorAll('.srcwrap button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const text = btn.nextElementSibling.textContent;
+    const mark = () => { btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 1200); };
+    const fallback = () => {
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.append(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+      mark();
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(mark, fallback);
+    else fallback();
+  });
+});
+</script>` : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
