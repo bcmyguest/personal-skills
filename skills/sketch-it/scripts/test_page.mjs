@@ -54,6 +54,15 @@ test('draws a component nest and a topology with the note on the part', () => {
   assert.match(html, /<strong>Store<\/strong><p>the one copy<\/p>/);
 });
 
+test('highlights a snippet and escapes what is inside a string', () => {
+  const html = renderPage(spec([{ kind: 'code', text: 'function retry() {\n  // cap\n  return "<script>"\n}' }]));
+  assert.match(html, /<span class="kw">function<\/span>/);
+  assert.match(html, /<span class="kw">return<\/span>/);
+  assert.match(html, /<span class="cm">\/\/ cap<\/span>/);
+  assert.match(html, /<span class="st">"&lt;script&gt;"<\/span>/);
+  assert.doesNotMatch(html, /<script>"/);
+});
+
 test('escapes text that would break the page', () => {
   const html = renderPage(spec([{ kind: 'pre', text: '<script>alert(1)</script>' }]));
   assert.match(html, /&lt;script&gt;/);

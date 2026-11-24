@@ -7,6 +7,7 @@
 //   tree       { "text" }          indented names, two spaces per level; "name # note" puts the note on the node
 //   components { "text" }          indented <Component> (path) lines, hooks on their own lines
 //   topology   { "rows" }          each row is a layer: parallel items side by side, color is the layer
+//   code       { "text" }          a short snippet; keywords, strings, numbers, and comments are colored
 //   pre        { "text" }          pseudocode, monospaced
 //   diff       { "text" }          lines starting with + or - are the change
 //   columns    { "items": [ { "title", "text" } ] }
@@ -22,7 +23,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readMermaidJs } from './diagram.mjs';
 
-const KINDS = new Set(['tree', 'components', 'topology', 'pre', 'diff', 'columns', 'screen', 'mermaid']);
+const KINDS = new Set(['tree', 'components', 'topology', 'code', 'pre', 'diff', 'columns', 'screen', 'mermaid']);
 
 export function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -43,7 +44,7 @@ function blockProblems(b, i) {
   if (!b || typeof b !== 'object') return [`${at} must be an object`];
   if (!KINDS.has(b.kind)) return [`${at}.kind must be one of ${[...KINDS].join(', ')}`];
   if (b.title !== undefined && typeof b.title !== 'string') return [`${at}.title must be a string`];
-  if (b.kind === 'tree' || b.kind === 'components' || b.kind === 'pre' || b.kind === 'diff') {
+  if (b.kind === 'tree' || b.kind === 'components' || b.kind === 'code' || b.kind === 'pre' || b.kind === 'diff') {
     if (typeof b.text !== 'string' || !b.text.trim()) return [`${at}.text is required`];
   }
   if (b.kind === 'topology') {
@@ -132,6 +133,50 @@ function renderTopology(rows) {
   return `<div class="topo">${legend}${body}</div>`;
 }
 
+const KEYWORDS = new Set('const let var function return if else for while class new import from export async await def fn pub struct enum true false null'.split(' '));
+
+export function highlight(text) {
+  let i = 0;
+  let out = '';
+  while (i < text.length) {
+    const hash = text[i] === '#' && (i === 0 || /\s/.test(text[i - 1]));
+    if (text.startsWith('//', i) || hash) {
+      const end = text.indexOf('\n', i);
+      const stop = end === -1 ? text.length : end;
+      out += `<span class="cm">${escapeHtml(text.slice(i, stop))}</span>`;
+      i = stop;
+      continue;
+    }
+    if (text[i] === '"' || text[i] === "'" || text[i] === '`') {
+      const q = text[i];
+      let j = i + 1;
+      while (j < text.length && text[j] !== '\n' && text[j] !== q) j += text[j] === '\\' ? 2 : 1;
+      if (text[j] === q) j++;
+      out += `<span class="st">${escapeHtml(text.slice(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+    if (/[0-9]/.test(text[i]) && (i === 0 || !/[A-Za-z_]/.test(text[i - 1]))) {
+      let j = i;
+      while (j < text.length && /[0-9_]/.test(text[j])) j++;
+      out += `<span class="nu">${escapeHtml(text.slice(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(text[i])) {
+      let j = i;
+      while (j < text.length && /[A-Za-z0-9_]/.test(text[j])) j++;
+      const word = text.slice(i, j);
+      out += KEYWORDS.has(word) ? `<span class="kw">${escapeHtml(word)}</span>` : escapeHtml(word);
+      i = j;
+      continue;
+    }
+    out += escapeHtml(text[i]);
+    i++;
+  }
+  return out;
+}
+
 function renderDiff(text) {
   return text.split('\n').map((line) => {
     const cls = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'ctx';
@@ -145,6 +190,7 @@ function renderBlock(b) {
   if (b.kind === 'tree') body = `<div class="tree">${renderNodes(parseTree(b.text))}</div>`;
   else if (b.kind === 'components') body = `<div class="comp">${renderComponents(parseTree(b.text))}</div>`;
   else if (b.kind === 'topology') body = renderTopology(b.rows);
+  else if (b.kind === 'code') body = `<pre class="code">${highlight(b.text)}</pre>`;
   else if (b.kind === 'pre') body = `<pre>${escapeHtml(b.text)}</pre>`;
   else if (b.kind === 'diff') body = `<div class="diff">${renderDiff(b.text)}</div>`;
   else if (b.kind === 'columns') {
@@ -174,6 +220,10 @@ const CSS = `
   --t0: #ffffff;
   --t1: #e5f3e8;
   --t2: #f3e6c8;
+  --kw: #1e3a8a;
+  --st: #166534;
+  --nu: #9a3412;
+  --cm: #44403c;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -189,6 +239,10 @@ const CSS = `
     --t0: #2a2622;
     --t1: #243028;
     --t2: #3a3020;
+    --kw: #93c5fd;
+    --st: #86efac;
+    --nu: #fdba74;
+    --cm: #d6d3d1;
   }
 }
 body {
@@ -228,6 +282,10 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 6px
 .topo .t0 { background: var(--t0); }
 .topo .t1 { background: var(--t1); }
 .topo .t2 { background: var(--t2); }
+.kw { color: var(--kw); font-weight: 650; }
+.st { color: var(--st); }
+.nu { color: var(--nu); }
+.cm { color: var(--cm); }
 pre, .diff {
   font: 13.5px/1.55 ui-monospace, monospace;
   margin: 0; white-space: pre-wrap;

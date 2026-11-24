@@ -91,6 +91,7 @@ Write a JSON spec. Do not write HTML. `scripts/page.mjs` turns the spec into one
 | `tree` | `text` | Indented names, two spaces per level. `name # note` puts the note on that node. |
 | `components` | `text` | Indented `<Component> (path)` lines. A line without brackets is a hook, inside its parent. |
 | `topology` | `rows` | Each row is a layer of `{ name, note? }` items side by side. Color is the layer. |
+| `code` | `text` | A short snippet. Keywords, strings, numbers, and comments are colored. |
 | `diff` | `text` | A line that starts with `+` or `-` is the change. |
 | `pre` | `text` | Pseudocode or a file tree, kept monospaced. |
 | `mermaid` | `source` | A diagram, with the source under it and a Copy button. The script refuses the page if Mermaid cannot parse it. |

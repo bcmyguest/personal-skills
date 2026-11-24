@@ -59,6 +59,11 @@
       "text": "src\n  routes # page entry, loads data\n  components # renders one screen region\n  api # talks to the server"
     },
     {
+      "kind": "code",
+      "title": "A snippet, highlighted",
+      "text": "function retry(attempt: number): number {\n  // cap the wait\n  return Math.min(1000 * 2 ** attempt, 30_000)\n}"
+    },
+    {
       "kind": "mermaid",
       "title": "Who sends what, in order",
       "source": "sequenceDiagram\n    participant User\n    participant Page\n    participant Checker\n    User->>Page: open the file\n    Page->>Checker: mermaid.parse\n    Checker-->>Page: ok"
