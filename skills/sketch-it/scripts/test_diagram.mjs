@@ -1,5 +1,5 @@
 // Tests for diagram.mjs: fence extraction, parse errors, the node cap, and the HTML page.
-// Run: node --test skills/to-diagram/scripts/test_diagram.mjs (installs mermaid on first run).
+// Run: node --test skills/sketch-it/scripts/test_diagram.mjs (installs mermaid on first run).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { extractBlocks, toHtml } from './diagram.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./diagram.mjs', import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), 'to-diagram-'));
+const dir = mkdtempSync(join(tmpdir(), 'sketch-it-'));
 const run = (...args) => {
   try {
     return { code: 0, out: execFileSync('node', [SCRIPT, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) };

@@ -24,11 +24,11 @@
     },
     {
       "title": "Explaining",
-      "description": "Follow-up commands for the last response \u2014 re-explain it, point to the code and sources behind it, or draw it as the diagram that fits.",
+      "description": "Follow-up commands for the last response — re-explain it, point to the code and sources behind it, or show its structure as a sketch, a diagram, or a page.",
       "skills": [
         "sorry-what",
         "show-me",
-        "to-diagram"
+        "sketch-it"
       ]
     },
     {

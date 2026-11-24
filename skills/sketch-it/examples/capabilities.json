@@ -1,0 +1,43 @@
+{
+  "title": "What one sketch-it page can hold",
+  "point": "Six views, one file. The label sits on the thing it names.",
+  "blocks": [
+    {
+      "kind": "screen",
+      "title": "Where the regions sit",
+      "regions": [
+        { "name": "Toolbar", "note": "the one action on this screen" },
+        { "name": "Form", "note": "the fields the user edits" },
+        { "name": "Status", "note": "what just happened, next to the form" }
+      ]
+    },
+    {
+      "kind": "columns",
+      "title": "Two appearances, side by side",
+      "items": [
+        { "title": "In the chat", "text": "A terminal shows the Mermaid source.\nThe picture is not there." },
+        { "title": "This page", "text": "The same picture is drawn.\nThe words stay next to it." }
+      ]
+    },
+    {
+      "kind": "tree",
+      "title": "Who calls whom",
+      "text": "handleRequest\n  authenticate\n    loadSession\n  dispatch\n    queryStore"
+    },
+    {
+      "kind": "diff",
+      "title": "What changed in that tree",
+      "text": " handleRequest\n   authenticate\n     loadSession\n   dispatch\n+    authorize\n     queryStore"
+    },
+    {
+      "kind": "pre",
+      "title": "Which files own what",
+      "text": "src/\n├── routes/        # page entry, loads data\n├── components/    # renders one screen region\n└── api/           # talks to the server"
+    },
+    {
+      "kind": "mermaid",
+      "title": "Who sends what, in order",
+      "source": "sequenceDiagram\n    participant User\n    participant Page\n    participant Checker\n    User->>Page: open the file\n    Page->>Checker: mermaid.parse\n    Checker-->>Page: ok"
+    }
+  ]
+}
