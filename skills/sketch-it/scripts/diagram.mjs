@@ -6,7 +6,9 @@
 //   options: --max-nodes N (default 20; 0 turns the cap off)
 //
 // Exit 0 when every diagram parses and fits the cap, 1 otherwise. Dependencies (mermaid, jsdom)
-// install once into $TO_DIAGRAM_CACHE, else $XDG_CACHE_HOME/to-diagram, else ~/.cache/to-diagram.
+// install once into $SKETCH_IT_CACHE, else $TO_DIAGRAM_CACHE, else
+// $XDG_CACHE_HOME/sketch-it, else ~/.cache/sketch-it.
+// An existing ~/.cache/to-diagram is reused until sketch-it has its own.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,8 +18,23 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const DEPS = { mermaid: '11.17.2', jsdom: '26.1.0' };
-const CACHE = process.env.TO_DIAGRAM_CACHE
-  || join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'to-diagram');
+
+function cacheDir() {
+  if (process.env.SKETCH_IT_CACHE) return process.env.SKETCH_IT_CACHE;
+  if (process.env.TO_DIAGRAM_CACHE) return process.env.TO_DIAGRAM_CACHE;
+  const base = process.env.XDG_CACHE_HOME || join(homedir(), '.cache');
+  const next = join(base, 'sketch-it');
+  const prev = join(base, 'to-diagram');
+  if (existsSync(join(prev, 'package.json')) && !existsSync(join(next, 'package.json'))) return prev;
+  return next;
+}
+
+const CACHE = cacheDir();
+
+export function readMermaidJs() {
+  const req = ensureDeps();
+  return readFileSync(join(dirname(req.resolve('mermaid/package.json')), 'dist', 'mermaid.min.js'), 'utf8');
+}
 
 function ensureDeps() {
   const req = createRequire(join(CACHE, 'package.json'));
@@ -26,7 +43,7 @@ function ensureDeps() {
     mkdirSync(CACHE, { recursive: true });
     if (!existsSync(join(CACHE, 'package.json'))) writeFileSync(join(CACHE, 'package.json'), '{"private":true}\n');
     const specs = Object.entries(DEPS).map(([n, v]) => `${n}@${v}`);
-    process.stderr.write(`to-diagram: installing ${specs.join(' ')} into ${CACHE}\n`);
+    process.stderr.write(`sketch-it: installing ${specs.join(' ')} into ${CACHE}\n`);
     execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--silent', ...specs], { stdio: 'inherit' });
   }
   return req;
@@ -153,7 +170,7 @@ async function main() {
     const src = args.files[0];
     const out = resolve(args.out || (src === '-' ? 'diagram.html' : src.replace(/\.[^./]+$/, '') + '.html'));
     mkdirSync(dirname(out), { recursive: true });
-    const js = readFileSync(join(dirname(req.resolve('mermaid/package.json')), 'dist', 'mermaid.min.js'), 'utf8');
+    const js = readMermaidJs();
     const title = src === '-' ? 'Diagram' : src.split('/').pop().replace(/\.[^.]+$/, '');
     writeFileSync(out, toHtml(blocks.map((b) => b.source), title, js));
     process.stdout.write(`wrote ${out}\n${pathToFileURL(out).href}\n`);

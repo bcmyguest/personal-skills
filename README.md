@@ -34,9 +34,9 @@ from bcmyguest/personal-skills."
 | `research-options` | Compare options with primary sources and spikes |
 | `independent-review` | Get a verdict from a reviewer that did not write the artifact |
 | `brief-agent` | Write a self-contained brief for the next agent or session |
-| `sorry-what` | Re-explain the last response, or items `2,4` of it, as context, a code snippet, a diagram, or an overview |
+| `sorry-what` | Re-explain the last response, or items `2,4` of it, as context, a code snippet, a sketch, diagram, or page, or an overview |
 | `show-me` | Point to the code or source behind the last response: snippet plus a permalink on GitHub, GitLab, Azure DevOps, Bitbucket, or Gitea, or the doc section |
-| `to-diagram` | Draw the subject as the diagram type that fits, checked by Mermaid's parser, inline where the chat renders it and as an HTML file elsewhere |
+| `sketch-it` | The view a person can read fastest: a text sketch, a checked Mermaid diagram, or one HTML page |
 | `plan-experiment` | Pre-register a comparison before spending on it |
 | `run-experiment` | Run an approved plan, monitor it, and keep it resumable |
 | `write-evidence-report` | Publish results that say exactly what the evidence supports |
@@ -130,7 +130,7 @@ skills/                          # portable agent skills — one folder per skil
   diagnose-failure/ … write-evidence-report/   SKILL.md each (method skills, see DECISIONS.md)
   sorry-what/                SKILL.md
   show-me/                   SKILL.md + scripts/permalink.py (+ test_permalink.py)
-  to-diagram/                SKILL.md + scripts/diagram.mjs (+ test_diagram.mjs) + references/
+  sketch-it/                 SKILL.md + scripts/ (diagram.mjs, page.mjs, tests) + examples/ + references/
   security-audit/            SKILL.md + scripts/ + evals/
   efficiency-audit/          SKILL.md + scripts/ + evals/
   _fixtures/                 shared eval fixture (vuln-app) for the audit skills
@@ -148,7 +148,8 @@ DECISIONS.md                     # why the method skills look the way they do
 
 ```bash
 python3 skills/show-me/scripts/test_permalink.py           # forge parsing, link shapes, no-link reasons
-node --test skills/to-diagram/scripts/test_diagram.mjs     # Mermaid parse errors, node cap, HTML output
+node --test skills/sketch-it/scripts/test_diagram.mjs      # Mermaid parse errors, node cap, HTML output
+node --test skills/sketch-it/scripts/test_page.mjs         # page spec, layout, inlined Mermaid
 ```
 
 ## License

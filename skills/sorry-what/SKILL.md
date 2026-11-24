@@ -1,6 +1,6 @@
 ---
 name: sorry-what
-description: Re-explain the previous response, or chosen numbered items from it, with the missing context, a code snippet of the proposed change, a diagram, or a plain high-level overview. Use when the user runs /sorry-what or says they did not follow the last answer.
+description: Re-explain the previous response, or chosen numbered items from it, with the missing context, a code snippet of the proposed change, a sketch, a diagram, or a page, or a plain high-level overview. Use when the user runs /sorry-what or says they did not follow the last answer.
 argument-hint: "[item numbers, comma-separated] [what to focus on]"
 ---
 
@@ -22,7 +22,7 @@ No arguments: explain the whole last response.
 | The item is | Give |
 | --- | --- |
 | A proposed code change | The snippet: the current lines with `path:line`, then the changed lines as a diff. |
-| A flow, structure, sequence, or set of states | A diagram, built as `to-diagram` says. |
+| A flow, structure, hierarchy, sequence, or set of states | The view `sketch-it` picks as easiest to read. |
 | A claim resting on unstated facts | The missing context: the terms, the constraint, the reason, each in a sentence. |
 | A long or dense passage | The overview: what it says in three sentences or fewer, and what the user should do with it. |
 
