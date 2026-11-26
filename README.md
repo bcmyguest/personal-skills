@@ -76,13 +76,14 @@ Python project tooling with uv — scaffold a repo from shipped templates (CI, D
 
 ### Agent workflow
 
-Session helpers — starting a new repo from your GitHub template repos, tracking upstream GitHub issues, PRs, and releases you're waiting on, assigning CODEOWNERS reviewers to your GitLab MRs, and babysitting a PR through review and CI.
+Session helpers — starting a new repo from your GitHub template repos, tracking upstream GitHub issues, PRs, and releases you're waiting on, assigning CODEOWNERS reviewers to your GitLab MRs, judging a PR with a fresh strong-model reviewer, and babysitting a PR through review and CI.
 
 | Skill | What |
 |-------|------|
 | `use-template` | Start a repo from your GitHub template repos (Rust CLI, npm, Python, docs site, skills pack) |
 | `watchlist` | Track upstream GitHub issues, PRs, and releases |
 | `assign-mr-reviewers` | Assign CODEOWNERS reviewers to your open GitLab MRs |
+| `judge-pr` | One-shot PR verdict from a fresh strong-model subagent — bulk-approve fixes, agree/disagree judgment calls, applyable patches |
 | `babysit-pr` | Work an open PR/MR on GitHub, GitLab, or Azure DevOps — batch small review fixes, round up design questions, fix failing jobs, restack |
 
 ### Rust
@@ -203,6 +204,7 @@ skills/                          # portable agent skills — one folder per skil
   watchlist/                 SKILL.md
   assign-mr-reviewers/       SKILL.md + scripts/
   babysit-pr/                SKILL.md + FORGES.md
+  judge-pr/                  SKILL.md
   react-ts-setup/            SKILL.md + references/
   rust-setup/                SKILL.md + templates/
   senior-frontend-refactor/  SKILL.md

@@ -51,11 +51,12 @@
     },
     {
       "title": "Agent workflow",
-      "description": "Session helpers \u2014 starting a new repo from your GitHub template repos, tracking upstream GitHub issues, PRs, and releases you're waiting on, assigning CODEOWNERS reviewers to your GitLab MRs, and babysitting a PR through review and CI.",
+      "description": "Session helpers \u2014 starting a new repo from your GitHub template repos, tracking upstream GitHub issues, PRs, and releases you're waiting on, assigning CODEOWNERS reviewers to your GitLab MRs, and judging a PR with a fresh strong-model reviewer, and babysitting a PR through review and CI.",
       "skills": [
         "use-template",
         "watchlist",
         "assign-mr-reviewers",
+        "judge-pr",
         "babysit-pr"
       ]
     },
